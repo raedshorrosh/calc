@@ -155,6 +155,7 @@ nestedHeaders:nested,
          toolbar:toolbar,
   updateTable: function (instance, cell, col, row, val, label, cellName) {
    var isAttemptMode = window.location.href.indexOf('attempt.php') !== -1;
+   console.log('isAttemptMode ',isAttemptMode,'readonly ',readonly); 
    if (isAttemptMode && readonly) {cell.classList.add('readonly');}                                    
    dataInput.value=JSON.stringify(instance.jspreadsheet.getData());dataInput.dispatchEvent(new Event('change'));
    MathJax.Hub.Queue(["Typeset", MathJax.Hub]);
