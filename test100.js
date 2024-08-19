@@ -155,7 +155,7 @@ nestedHeaders:nested,
          toolbar:toolbar,
   updateTable: function (instance, cell, col, row, val, label, cellName) {
    var isAttemptMode = window.location.href.indexOf('attempt.php') !== -1;
-   if (isAttemptMode && readonly) instance.jspreadsheet.cell.classList.add('readonly');                                    
+   if (isAttemptMode && readonly) {cell.classList.add('readonly');}                                    
    dataInput.value=JSON.stringify(instance.jspreadsheet.getData());dataInput.dispatchEvent(new Event('change'));
    MathJax.Hub.Queue(["Typeset", MathJax.Hub]);
     },    
@@ -179,14 +179,24 @@ table.onbeforechange= function(instance, cell, x, y, value){if (readonly) {cell.
  if ( ({#hint_enable#}==1) || showHint) {hint_el.style.display = "block";btn.disabled = false;}        
 
 
+var  checkAnswer = function(hint) {
+     readonly=true;
+     table.insertRow();
+    showHint=hint;
+     table.deleteRow();
+
+  };
+
  var answered=false;
 stack_js.get_content("contentCT{#rqm#}").then((content) => {
 if (content !== null) {
 if  (!answered ) 
 {
    answered=true;
-   readonly=true;
-   table.update;
+ var M=JSON.parse(content);
+ checkAnswer(M[0]);console.log('content is ',M[0]);
+
+
 }}});   
  });
 [[/script]]
