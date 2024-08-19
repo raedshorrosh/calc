@@ -6,7 +6,6 @@
 [[style href="https://fonts.googleapis.com/css?family=Material+Icons" type="text/css" /]]
 [[script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.7/MathJax.js?config=TeX-MML-AM_HTMLorMML" /]]
 
-<p dir="rtl" style="text-align: right;">&nbsp;להלן אחת הדרכים לפתור את השאלה&nbsp;</p>
 <div style="display: flex; justify-content: center; width:100%; font-size:{@fontsize@}">
     <div id="feedback{#rqm#}" dir="ltr">
     </div>
