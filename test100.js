@@ -19,9 +19,13 @@
 
    
 [[script type="module"]]
-const iframe = document.querySelector('iframe');
-iframe.removeAttribute('sandbox');
-console.log(iframe);
+const iframeElement = document.querySelector('iframe');
+if (iframeElement) {
+    iframeElement.removeAttribute('sandbox');
+} else {
+    console.error('Iframe not found.');
+}
+
 // Assuming MathJax is already loaded
 MathJax.Hub.Config({
   jax: ['input/AsciiMath'],
