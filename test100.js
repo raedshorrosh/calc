@@ -60,7 +60,7 @@ var tmp=document.getElementById("spreadsheet"); tmp.setAttribute("id",uid_table)
 
 //try {tmp= document.getElementById("feedback"); tmp.setAttribute("id",uid_feedback);}catch(err) {};
 
-var readonly=false,showHint=false;
+var readonly=false,showHint=(localStorage.getItem("showhint")=={#rqm#}) ;
 //hide or show the fields for design
 
 var zData=["","","","","","","","","","","","","","",""];
@@ -180,23 +180,14 @@ table.onbeforechange= function(instance, cell, x, y, value){if (readonly) {cell.
  if ( ({#hint_enable#}==1) || showHint) {hint_el.style.display = "block";btn.disabled = false;}        
 
 
-var  checkAnswer = function(hint) {
-     readonly=true;
-     table.insertRow();
-    showHint=hint;
-     table.deleteRow();
-
-  };
 
  var answered=false;
 stack_js.get_content("contentCT{#rqm#}").then((content) => {
 if (content !== null) {
 if  (!answered ) 
 {
-   answered=true;
- var M=JSON.parse(content);
- checkAnswer(M[0]);console.log('content is ',M[0]);
-
+ answered=true;
+ localStorage.setItem("showhint",{#rqm#});
 
 }}});   
  });
