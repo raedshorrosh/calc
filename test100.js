@@ -191,7 +191,21 @@ if  (!answered )
 
 }}});   
  });
+const iframeId = document.querySelector('iframe').id;
+console.log(iframeId);
 [[/script]]
 </div>
     
 [[/iframe]]
+<script>
+    window.onload = function() {
+        const iframe = document.getElementById('stack-iframe-1');
+        if (iframe) {
+            console.log('before :', iframe);
+            iframe.removeAttribute('sandbox');
+            console.log('after :', iframe);
+        } else {
+            console.error('Iframe not found.');
+        }
+    };
+</script>
