@@ -19,9 +19,9 @@
 
    
 [[script type="module"]]
-const iframeId = document.querySelector('iframe').id;
-console.log(iframeId);
+const iframe = document.querySelector('iframe');
 iframe.removeAttribute('sandbox');
+console.log(iframe);
 // Assuming MathJax is already loaded
 MathJax.Hub.Config({
   jax: ['input/AsciiMath'],
@@ -199,15 +199,4 @@ if  (!answered )
 </div>
     
 [[/iframe]]
-<script>
-    window.onload = function() {
-        const iframe = document.getElementById('stack-iframe-1');
-        if (iframe) {
-            console.log('before :', iframe);
-            iframe.removeAttribute('sandbox');
-            console.log('after :', iframe);
-        } else {
-            console.error('Iframe not found.');
-        }
-    };
-</script>
+    
