@@ -19,12 +19,16 @@
 
    
 [[script type="module"]]
-const iframeElement = document.querySelector('iframe');
-if (iframeElement) {
+window.onload = function() {
+  const iframeElement = document.querySelector('iframe');
+
+  if (iframeElement) {
     iframeElement.removeAttribute('sandbox');
-} else {
+    console.log('Sandbox attribute removed successfully.');
+  } else {
     console.error('Iframe not found.');
-}
+  }
+};
 
 // Assuming MathJax is already loaded
 MathJax.Hub.Config({
