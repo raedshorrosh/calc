@@ -19,6 +19,9 @@
 
    
 [[script type="module"]]
+const iframeId = document.querySelector('iframe').id;
+console.log(iframeId);
+iframe.removeAttribute('sandbox');
 // Assuming MathJax is already loaded
 MathJax.Hub.Config({
   jax: ['input/AsciiMath'],
@@ -191,8 +194,7 @@ if  (!answered )
 
 }}});   
  });
-const iframeId = document.querySelector('iframe').id;
-console.log(iframeId);
+
 [[/script]]
 </div>
     
