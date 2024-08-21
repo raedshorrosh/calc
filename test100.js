@@ -19,16 +19,7 @@
 
    
 [[script type="module"]]
-window.onload = function() {
-  const iframeElement = document.querySelector('iframe');
 
-  if (iframeElement) {
-    iframeElement.removeAttribute('sandbox');
-    console.log('Sandbox attribute removed successfully.');
-  } else {
-    console.error('Iframe not found.');
-  }
-};
 
 // Assuming MathJax is already loaded
 MathJax.Hub.Config({
@@ -57,7 +48,7 @@ Promise.all(promises).then(([idForAns2]) => {
   /* This block only executes once those inputs are ready. */
   var dataInput = document.getElementById(idForAns2);
   
-
+ 
  //function for the table 
  var S=function(value,n){return value.toExponential(n)};
     
