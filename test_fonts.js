@@ -6,8 +6,13 @@
 [[style href="https://fonts.googleapis.com/css?family=Material+Icons" type="text/css" /]]
 [[script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.7/MathJax.js?config=TeX-MML-AM_HTMLorMML" /]]
 
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Heebo:wght@100..900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Almarai:wght@300;400;700;800&display=swap');
+</style>
+
   
-  <div style="display: flex; justify-content: center; width:100%; font-family:almarai; unicode-bidi: bidi-override;font-size:{@fontsize@}">
+  <div style="display: flex; justify-content: center; width:100%; font-family:almarai,Heebo; unicode-bidi: bidi-override;font-size:{@fontsize@}">
    <div id="spreadsheet" dir="ltr" >
     <div id="myView" style="display:none;" ></div>
  </div>
