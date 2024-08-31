@@ -10,7 +10,7 @@
 @import url('https://fonts.googleapis.com/css2?family=Heebo:wght@100..900&display=swap');
 </style>
   
-  <div style="display: flex; justify-content: center; width:100%; font-family:heboo; font-size:{@fontsize@}">
+  <div style="display: flex; justify-content: center; width:100%; font-family:almarai; font-size:{@fontsize@}">
    <div id="spreadsheet" dir="ltr" >
     <div id="myView" style="display:none;" ></div>
  </div>
