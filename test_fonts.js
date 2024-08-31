@@ -8,6 +8,7 @@
 
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Heebo:wght@100..900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Almarai:wght@300;400;700;800&display=swap');
 </style>
   
   <div style="display: flex; justify-content: center; width:100%; font-family:almarai; font-size:{@fontsize@}">
