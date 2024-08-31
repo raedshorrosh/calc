@@ -11,7 +11,7 @@
 @import url('https://fonts.googleapis.com/css2?family=Almarai:wght@300;400;700;800&display=swap');
 </style>
   
-  <div style="display: flex; justify-content: center; width:100%; font-family:almarai; font-size:{@fontsize@}">
+  <div style="display: flex; justify-content: center; width:100%; font-family:almarai; unicode-bidi: bidi-override;font-size:{@fontsize@}">
    <div id="spreadsheet" dir="ltr" >
     <div id="myView" style="display:none;" ></div>
  </div>
