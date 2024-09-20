@@ -38,7 +38,6 @@ columns: [
 
 ],
 nestedHeaders:nested,
-toolbar:toolbar,
 updateTable: function (instance, cell, col, row, val, label, cellName) {
 cell.classList.add('readonly')
 },
