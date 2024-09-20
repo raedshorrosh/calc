@@ -10,6 +10,10 @@
     <div id="feedback{#rqm#}" dir="ltr">
     </div>
 </div>
+<script>
+  //function for the table 
+   var S=function(value,n){return value.toExponential(n)};
+</script>
 
 [[script type="module"]]
 import {stack_js} from '[[cors src="stackjsiframe.js"/]]';
