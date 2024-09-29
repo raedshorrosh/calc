@@ -104,8 +104,8 @@ for (let rowIndex = 0; rowIndex < data.length; rowIndex++) {
 
   // Iterate through each element in the row
   for (let colIndex = 0; colIndex < rowData.length; colIndex++) {
-    // Check if the current element starts with "?"
-    if (rowData[colIndex].startsWith("?")) {
+    // Check if the current element starts with "?,"
+    if (rowData[colIndex].startsWith("?,")) {
       // Extract the grade value
       const agrade = rowData[colIndex].substring(2);
 
