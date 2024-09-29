@@ -200,7 +200,7 @@ var table=jspreadsheet(document.getElementById(uid_table), {
             
     columns: [
         { type: 'dropdown',   source:{#items#},readOnly:{#design#}==1?0:1,stripHTML:false },
-        { type: 'dropdown',   source:{#units#},readOnly:{#design#}==1?0:1,stripHTML:false  },
+        { type: 'dropdown',   source:{#units#},readOnly:0,stripHTML:false  },
         { type: 'text',   wordWrap:true,readOnly:0,stripHTML:false},                                      
      
      ],
