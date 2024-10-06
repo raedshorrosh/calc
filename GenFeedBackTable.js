@@ -36,9 +36,9 @@ allowInsertRow:0,
 allowDeleteRow:0,
 
 columns: [
-{ type: 'dropdown', source:{#items#}},
-{ type: 'dropdown', source:{#units#} },
-{ type: 'text', wordWrap:true },
+{ type: 'dropdown', source:{#items#},stripHTML:false},
+{ type: 'dropdown', source:{#units#},stripHTML:false },
+{ type: 'text', wordWrap:true,stripHTML:false },
 
 ],
 nestedHeaders:nested,
