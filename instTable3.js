@@ -320,9 +320,6 @@ table = jspreadsheet(document.getElementById(uid_table), settings);
 
 const studentData = table.getData();
 const teacherData = teacherTable.getData();
-//const correct='<span style="font-size: 1em; color:green;"><i class="fa fa-check"></i></span>';
-//const wrong='<span style="font-size: 1em; color:red;"><i class="fa fa-times"></i></span>';
- 
 const correct='<span style="font-size: 1em; color:green;">✔</span>';
 const wrong='<span style="font-size: 0.75em; color:red;">❌</span>';   
 
