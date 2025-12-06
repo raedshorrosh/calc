@@ -5,7 +5,7 @@
 [[style href="https://raedshorrosh.github.io/jexcel.css" type="text/css" /]]
 [[style href="https://fonts.googleapis.com/css?family=Material+Icons" type="text/css" /]]
 [[script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.7/MathJax.js?config=TeX-MML-AM_HTMLorMML" /]]
-[[style href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" type="text/css" /]]
+
  <p style=display:none>`x^2`,`x/y`, \(\small C_6H_{12}O_{6(s)}\)</p>
   <div style="display: flex; justify-content: center; width:100%; font-size:{@fontsize@}">
    <div id="spreadsheet" dir="ltr" >
@@ -320,11 +320,11 @@ table = jspreadsheet(document.getElementById(uid_table), settings);
 
 const studentData = table.getData();
 const teacherData = teacherTable.getData();
-const correct='<span style="font-size: 1em; color:green;"><i class="fa fa-check"></i></span>';
-const wrong='<span style="font-size: 1em; color:red;"><i class="fa fa-times"></i></span>';
+//const correct='<span style="font-size: 1em; color:green;"><i class="fa fa-check"></i></span>';
+//const wrong='<span style="font-size: 1em; color:red;"><i class="fa fa-times"></i></span>';
  
-//const correct='<span style="font-size: 1em; color:green;">✔</span>';
-//const wrong='<span style="font-size: 1em; color:red;">❌</span>';   
+const correct='<span style="font-size: 1em; color:green;">✔</span>';
+const wrong='<span style="font-size: 0.75em; color:red;">❌</span>';   
 
 // Use stored positions for grading
 cellsToGrade.forEach(({ row, col,theGrade }) => {
