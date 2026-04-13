@@ -5,7 +5,7 @@
 [[style href="https://raedshorrosh.github.io/jexcel.css" type="text/css" /]]
 [[style href="https://fonts.googleapis.com/css?family=Material+Icons" type="text/css" /]]
 [[script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.7/MathJax.js?config=TeX-MML-AM_HTMLorMML" /]]
-[[comment]] ver 1.13 show hint button works now [[/comment]]
+[[comment]] ver 1.14 [[/comment]]
   
  <div style="display: flex; justify-content: center; width:100%; font-size:{@fontsize@}">
    <div id="spreadsheet" dir="ltr" ></div>
@@ -73,7 +73,7 @@ Promise.all(promises).then(([idForAns2]) => {
   if (nst=== undefined) {nested=[]} else  {nested=JSON.parse(nst.replace(/'/g, '"'))};
   
   // =========================================================================
-  // CHANGE 1: Set columns 4 and onward to auto-size width AND define them
+  // SET COLUMNS AND DYNAMIC WIDTHS
   // =========================================================================
   var widths=[180,120,120];
   var colsConfig = [
@@ -83,12 +83,12 @@ Promise.all(promises).then(([idForAns2]) => {
   ];
 
   for (let i=3; i<{#Titles#}.length; i++){
-      // jSpreadsheet requires numerical pixel values, not the word 'auto'.
-      // Dynamically calculate width based on Title length (approx 10px per character, min 120px)
+      // Calculate width based on Title length (approx 10px per char, min 120px)
       var titleLength = {#Titles#}[i] ? String({#Titles#}[i]).length : 12;
       widths[i] = Math.max(120, (titleLength * 10) + 40); 
       
-      colsConfig.push({ type: 'text', wordWrap:true }); // Ensure the column exists!
+      // Ensure the column configuration exists!
+      colsConfig.push({ type: 'text', wordWrap:true }); 
   };
   // =========================================================================
 
@@ -109,7 +109,6 @@ Promise.all(promises).then(([idForAns2]) => {
     data: data,
     colHeaders:{#Titles#},
     colWidths: widths,
-    columnResize: true, // Enables double-click column auto-resize and dragging
     allowManualInsertColumn:0,             
     allowInsertColumn:0,
     allowDeleteColumn:0,
@@ -161,7 +160,7 @@ Promise.all(promises).then(([idForAns2]) => {
   });   
 
   // =========================================================================
-  // CHANGE 2: Auto-resize iframe width and height using STACK's native API
+  // AUTO-RESIZE IFRAME 
   // =========================================================================
   function autoResize() {
       try {
@@ -169,10 +168,10 @@ Promise.all(promises).then(([idForAns2]) => {
           if (tableContainer && typeof stack_js !== 'undefined') {
               // Get actual DOM content sizes + padding to prevent scrollbars
               const newHeight = document.body.scrollHeight + 20;
-              // Ensure we don't shrink smaller than the initial {#width#} provided by STACK
+              // Ensure we don't shrink smaller than the initial width
               const newWidth = Math.max({#width#}, tableContainer.scrollWidth + 20);
 
-              // Use STACK's secure API to resize both Width and Height safely!
+              // Use STACK's secure API to resize both Width and Height
               stack_js.resize_containing_frame(newWidth, newHeight);
           }
       } catch (e) { 
@@ -180,8 +179,8 @@ Promise.all(promises).then(([idForAns2]) => {
       }
   }
 
-  // Initial trigger for resize
-  setTimeout(autoResize, 200); // Slight delay ensures jspreadsheet is fully rendered
+  // Initial trigger for resize after a slight delay to ensure render
+  setTimeout(autoResize, 200); 
 
   // Set up the ResizeObserver to catch ongoing layout changes
   const resizeObserver = new ResizeObserver(() => { autoResize(); });
@@ -199,4 +198,4 @@ Promise.all(promises).then(([idForAns2]) => {
 });
 
 [[/script]]
-</div>
+[[/iframe]]
