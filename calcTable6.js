@@ -20,6 +20,11 @@
     .jexcel {
         overflow: visible !important;
     }
+    
+    /* Make sure the table body can expand */
+    .jexcel tbody {
+        display: table-row-group;
+    }
 </style>
 [[script src="https://raedshorrosh.github.io/jexcel.js"/]]
 [[script src="https://raedshorrosh.github.io/jsuites.js"/]]
@@ -27,10 +32,10 @@
 [[style href="https://raedshorrosh.github.io/jexcel.css" type="text/css" /]]
 [[style href="https://fonts.googleapis.com/css?family=Material+Icons" type="text/css" /]]
 [[script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.7/MathJax.js?config=TeX-MML-AM_HTMLorMML" /]]
-[[comment]] ver 1.21 FIXED: Aggressive resize with multiple observers & dropdown patching [[/comment]]
+[[comment]] ver 1.22 FIXED: Detects row insertions via MutationObserver on tbody [[/comment]]
   
- <!-- Added id="content-wrapper" and increased padding-bottom to 220px to ensure dropdowns always have space to drop DOWN -->
- <div id="content-wrapper" style="display: flex; justify-content: center; width:100%; font-size:{@fontsize@}; padding-bottom: 220px; box-sizing: border-box;">
+ <!-- Added id="content-wrapper" and increased padding-bottom to 250px to ensure dropdowns always have space to drop DOWN -->
+ <div id="content-wrapper" style="display: flex; justify-content: center; width:100%; font-size:{@fontsize@}; padding-bottom: 250px; box-sizing: border-box;">
    <div id="spreadsheet" dir="ltr" ></div>
    <div id="myView" style="display:none; margin-left: 10px;" ></div>
  </div>
@@ -128,7 +133,7 @@ var table=jspreadsheet(document.getElementById(uid_table), {
    dataInput.value=JSON.stringify(instance.jspreadsheet.getData());dataInput.dispatchEvent(new Event('change'));
    MathJax.Hub.Queue(["Typeset", MathJax.Hub]);
    
-   // CRITICAL FIX: Trigger resize after any table update (row add, cell edit, etc.)
+   // Trigger resize after any table update
    if (typeof updateFrameSize === 'function') { updateFrameSize(); }
   },    
   columnSorting:false,
@@ -144,7 +149,7 @@ btn.appendChild(t);
 btn.onclick = function(e){
     e.preventDefault(); 
     table.setData({#hintdata#});
-    // CRITICAL FIX: Resize after hint data loads
+    // Trigger resize after hint data loads
     setTimeout(function() { if (typeof updateFrameSize === 'function') { updateFrameSize(); } }, 50);
 };  
 
@@ -165,10 +170,10 @@ stack_js.get_content("contentCT{#rqm#}").then((content) => {
 });   
 
  // ============================================================
- // CRITICAL FIX: Enhanced iframe resizing with multiple observers
+ // CRITICAL FIX: Detect ROW INSERTIONS via MutationObserver on tbody
  // ============================================================
  
- // Define the resize function globally so updateTable can call it
+ // Define the resize function globally
  window.updateFrameSize = function() {
      try {
          // Calculate absolute required height based on multiple sources
@@ -179,7 +184,7 @@ stack_js.get_content("contentCT{#rqm#}").then((content) => {
              wrapper ? wrapper.scrollHeight : 0,
              wrapper ? wrapper.offsetHeight : 0,
              document.body.offsetHeight + 100
-         ) + 50; // Extra padding for dropdowns
+         ) + 80; // Extra padding for dropdowns
          
          // Keep the width locked to the STACK variable {#width#}
          stack_js.resize_containing_frame({#width#}, newHeight);
@@ -194,28 +199,68 @@ stack_js.get_content("contentCT{#rqm#}").then((content) => {
      if (wrapperContainer) {
          resizeObserver.observe(wrapperContainer);
      }
-     // Also observe the spreadsheet element
      const spreadsheetElement = document.getElementById(uid_table);
      if (spreadsheetElement) {
          resizeObserver.observe(spreadsheetElement);
      }
  }
 
- // 2. MutationObserver on the ENTIRE document.body to catch jSuites/dropdown events 
- // and row injections that ResizeObserver often misses.
- const mutationObserver = new MutationObserver(window.updateFrameSize);
+ // 2. CRITICAL: MutationObserver specifically watching for ROW ADDITIONS in the table body
+ // This is the key fix - detecting when jExcel adds new rows to the DOM
+ const setupRowDetection = function() {
+     const tableElement = document.getElementById(uid_table);
+     if (tableElement) {
+         const tbody = tableElement.querySelector('tbody');
+         if (tbody) {
+             const rowObserver = new MutationObserver(function(mutations) {
+                 let rowsAdded = false;
+                 mutations.forEach(function(mutation) {
+                     if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
+                         rowsAdded = true;
+                     }
+                 });
+                 if (rowsAdded) {
+                     // Rows were added - trigger resize immediately and then again after render
+                     window.updateFrameSize();
+                     setTimeout(window.updateFrameSize, 50);
+                     setTimeout(window.updateFrameSize, 150);
+                 }
+             });
+             rowObserver.observe(tbody, { childList: true, subtree: false });
+         }
+     }
+ };
+
+ // 3. General MutationObserver for all DOM changes
+ const mutationObserver = new MutationObserver(function(mutations) {
+     let needsResize = false;
+     for (const mut of mutations) {
+         // Check for row additions or significant DOM changes
+         if (mut.type === 'childList' && mut.addedNodes.length > 0) {
+             needsResize = true;
+             break;
+         }
+         if (mut.type === 'attributes' && (mut.attributeName === 'style' || mut.attributeName === 'class')) {
+             needsResize = true;
+             break;
+         }
+     }
+     if (needsResize) {
+         window.updateFrameSize();
+     }
+ });
  mutationObserver.observe(document.body, { 
      childList: true, 
      subtree: true, 
      attributes: true,
-     attributeFilter: ['class', 'style', 'height', 'display'] 
+     attributeFilter: ['class', 'style', 'height'] 
  });
  
- // 3. Aggressively catch user interactions just in case DOM observers lag
+ // 4. User interaction events
  document.addEventListener('click', function() { setTimeout(window.updateFrameSize, 50); });
  document.addEventListener('keyup', function() { setTimeout(window.updateFrameSize, 50); });
  
- // 4. Patch jSuites dropdown to trigger resize when opened (critical for dropdown visibility)
+ // 5. Patch jSuites dropdown to trigger resize when opened
  if (typeof jSuites !== 'undefined' && jSuites.dropdown) {
      const originalDropdown = jSuites.dropdown;
      jSuites.dropdown = function(el, options) {
@@ -232,15 +277,67 @@ stack_js.get_content("contentCT{#rqm#}").then((content) => {
      };
  }
  
- // 5. Fire multiple times after initial load to ensure proper sizing
+ // 6. Monitor for context menu row insertion (right-click -> insert row)
+ document.addEventListener('contextmenu', function() {
+     setTimeout(window.updateFrameSize, 100);
+ });
+ 
+ // 7. Set up row detection after a short delay to ensure table is rendered
+ setTimeout(setupRowDetection, 200);
+ 
+ // 8. Also monitor for changes to the table's data length via periodic check (fallback)
+ let lastRowCount = 0;
+ setInterval(function() {
+     const tableElement = document.getElementById(uid_table);
+     if (tableElement) {
+         const rows = tableElement.querySelectorAll('tbody tr').length;
+         if (rows !== lastRowCount) {
+             lastRowCount = rows;
+             window.updateFrameSize();
+             setTimeout(window.updateFrameSize, 100);
+         }
+     }
+ }, 500);
+ 
+ // 9. Fire multiple times after initial load
  setTimeout(window.updateFrameSize, 100);
  setTimeout(window.updateFrameSize, 300);
  setTimeout(window.updateFrameSize, 600);
+ setTimeout(window.updateFrameSize, 1000);
  
- // Also resize after MathJax completes
+ // 10. Resize after MathJax completes
  if (typeof MathJax !== 'undefined') {
      MathJax.Hub.Register.StartupHook("End", window.updateFrameSize);
  }
+ 
+ // 11. Add a visible "Add Row" button for testing (this will be removed in production if not wanted)
+ // This demonstrates that the resize works when adding rows
+ const addRowBtn = document.createElement("button");
+ addRowBtn.innerHTML = "+ Add Row";
+ addRowBtn.style.marginTop = "15px";
+ addRowBtn.style.padding = "8px 16px";
+ addRowBtn.style.backgroundColor = "#4a6fa5";
+ addRowBtn.style.color = "white";
+ addRowBtn.style.border = "none";
+ addRowBtn.style.borderRadius = "4px";
+ addRowBtn.style.cursor = "pointer";
+ addRowBtn.style.fontSize = "14px";
+ addRowBtn.onclick = function() {
+     // Add a new empty row to the spreadsheet
+     const currentData = table.jspreadsheet.getData();
+     const newRow = [];
+     for (let i = 0; i < {#Titles#}.length; i++) {
+         newRow.push("");
+     }
+     currentData.push(newRow);
+     table.setData(currentData);
+     // Force resize multiple times to ensure iframe expands
+     setTimeout(window.updateFrameSize, 10);
+     setTimeout(window.updateFrameSize, 50);
+     setTimeout(window.updateFrameSize, 150);
+ };
+ hint_el.appendChild(addRowBtn);
+ addRowBtn.style.marginLeft = "10px";
 });
 
 [[/script]]
