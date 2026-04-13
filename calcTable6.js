@@ -5,12 +5,19 @@
         overflow: hidden !important; 
         margin: 0;
         padding: 0;
+        height: auto !important;
+        min-height: 100%;
     }
     
-    /* Force jSpreadsheet to physically expand vertically instead of scrolling internally. 
+    /* Force jSpreadsheet to physically expand vertically instead of scrolling internally.
        This guarantees the iframe's scrollHeight increases when rows are added. */
     .jexcel-content {
         max-height: none !important;
+        overflow: visible !important;
+    }
+    
+    /* Ensure spreadsheet container can grow */
+    .jexcel {
         overflow: visible !important;
     }
 </style>
@@ -20,10 +27,10 @@
 [[style href="https://raedshorrosh.github.io/jexcel.css" type="text/css" /]]
 [[style href="https://fonts.googleapis.com/css?family=Material+Icons" type="text/css" /]]
 [[script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.7/MathJax.js?config=TeX-MML-AM_HTMLorMML" /]]
-[[comment]] ver 1.20 CSS override for jexcel-content to force vertical expansion & aggressive body observation [[/comment]]
+[[comment]] ver 1.21 FIXED: Aggressive resize with multiple observers & dropdown patching [[/comment]]
   
- <!-- Added id="content-wrapper" and a 180px padding-bottom to ensure dropdowns always have space to drop DOWN -->
- <div id="content-wrapper" style="display: flex; justify-content: center; width:100%; font-size:{@fontsize@}; padding-bottom: 180px; box-sizing: border-box;">
+ <!-- Added id="content-wrapper" and increased padding-bottom to 220px to ensure dropdowns always have space to drop DOWN -->
+ <div id="content-wrapper" style="display: flex; justify-content: center; width:100%; font-size:{@fontsize@}; padding-bottom: 220px; box-sizing: border-box;">
    <div id="spreadsheet" dir="ltr" ></div>
    <div id="myView" style="display:none; margin-left: 10px;" ></div>
  </div>
@@ -120,6 +127,9 @@ var table=jspreadsheet(document.getElementById(uid_table), {
    if (isAttemptMode && readonly) {cell.classList.add('readonly');}                                    
    dataInput.value=JSON.stringify(instance.jspreadsheet.getData());dataInput.dispatchEvent(new Event('change'));
    MathJax.Hub.Queue(["Typeset", MathJax.Hub]);
+   
+   // CRITICAL FIX: Trigger resize after any table update (row add, cell edit, etc.)
+   if (typeof updateFrameSize === 'function') { updateFrameSize(); }
   },    
   columnSorting:false,
 });
@@ -134,6 +144,8 @@ btn.appendChild(t);
 btn.onclick = function(e){
     e.preventDefault(); 
     table.setData({#hintdata#});
+    // CRITICAL FIX: Resize after hint data loads
+    setTimeout(function() { if (typeof updateFrameSize === 'function') { updateFrameSize(); } }, 50);
 };  
 
 var hint_el= document.getElementById(uid_hint);
@@ -152,49 +164,82 @@ stack_js.get_content("contentCT{#rqm#}").then((content) => {
     }
 });   
 
- // Listen to changes in the table height and update the frame height
- if (typeof stack_js !== 'undefined') {
-     const updateFrameSize = () => {
-         try {
-             // Calculate absolute required height based on the body's scrollHeight.
-             // Our wrapper's 180px padding is naturally included in this, forcing STACK 
-             // to allocate space for dropdowns!
-             const wrapper = document.getElementById('content-wrapper');
-             const newHeight = Math.max(
-                 document.body.scrollHeight, 
-                 document.documentElement.scrollHeight,
-                 wrapper ? wrapper.scrollHeight : 0
-             ) + 10;
-             
-             // Keep the width locked to the STACK variable {#width#}
-             stack_js.resize_containing_frame({#width#}, newHeight);
-         } catch (e) {}
-     };
+ // ============================================================
+ // CRITICAL FIX: Enhanced iframe resizing with multiple observers
+ // ============================================================
+ 
+ // Define the resize function globally so updateTable can call it
+ window.updateFrameSize = function() {
+     try {
+         // Calculate absolute required height based on multiple sources
+         const wrapper = document.getElementById('content-wrapper');
+         const newHeight = Math.max(
+             document.body.scrollHeight, 
+             document.documentElement.scrollHeight,
+             wrapper ? wrapper.scrollHeight : 0,
+             wrapper ? wrapper.offsetHeight : 0,
+             document.body.offsetHeight + 100
+         ) + 50; // Extra padding for dropdowns
+         
+         // Keep the width locked to the STACK variable {#width#}
+         stack_js.resize_containing_frame({#width#}, newHeight);
+     } catch (e) {}
+ };
 
-     // 1. ResizeObserver for layout dimension shifts
-     const resizeObserver = new ResizeObserver(updateFrameSize);
+ // 1. ResizeObserver for layout dimension shifts
+ if (typeof ResizeObserver !== 'undefined') {
+     const resizeObserver = new ResizeObserver(window.updateFrameSize);
      resizeObserver.observe(document.body);
      const wrapperContainer = document.getElementById('content-wrapper');
      if (wrapperContainer) {
          resizeObserver.observe(wrapperContainer);
      }
+     // Also observe the spreadsheet element
+     const spreadsheetElement = document.getElementById(uid_table);
+     if (spreadsheetElement) {
+         resizeObserver.observe(spreadsheetElement);
+     }
+ }
 
-     // 2. MutationObserver on the ENTIRE document.body to catch jSuites/dropdown events 
-     // and row injections that ResizeObserver often misses.
-     const mutationObserver = new MutationObserver(updateFrameSize);
-     mutationObserver.observe(document.body, { 
-         childList: true, 
-         subtree: true, 
-         attributes: true,
-         attributeFilter: ['class', 'style', 'height'] 
-     });
-     
-     // 3. Fallback: Aggressively catch user interactions just in case DOM observers lag
-     document.addEventListener('click', () => setTimeout(updateFrameSize, 50));
-     document.addEventListener('keyup', () => setTimeout(updateFrameSize, 50));
-     
-     // Fire once after a brief delay to ensure MathJax and jSpreadsheet have fully rendered
-     setTimeout(updateFrameSize, 500);
+ // 2. MutationObserver on the ENTIRE document.body to catch jSuites/dropdown events 
+ // and row injections that ResizeObserver often misses.
+ const mutationObserver = new MutationObserver(window.updateFrameSize);
+ mutationObserver.observe(document.body, { 
+     childList: true, 
+     subtree: true, 
+     attributes: true,
+     attributeFilter: ['class', 'style', 'height', 'display'] 
+ });
+ 
+ // 3. Aggressively catch user interactions just in case DOM observers lag
+ document.addEventListener('click', function() { setTimeout(window.updateFrameSize, 50); });
+ document.addEventListener('keyup', function() { setTimeout(window.updateFrameSize, 50); });
+ 
+ // 4. Patch jSuites dropdown to trigger resize when opened (critical for dropdown visibility)
+ if (typeof jSuites !== 'undefined' && jSuites.dropdown) {
+     const originalDropdown = jSuites.dropdown;
+     jSuites.dropdown = function(el, options) {
+         const instance = originalDropdown(el, options);
+         if (instance && instance.open) {
+             const originalOpen = instance.open;
+             instance.open = function() {
+                 const result = originalOpen.apply(this, arguments);
+                 setTimeout(window.updateFrameSize, 60);
+                 return result;
+             };
+         }
+         return instance;
+     };
+ }
+ 
+ // 5. Fire multiple times after initial load to ensure proper sizing
+ setTimeout(window.updateFrameSize, 100);
+ setTimeout(window.updateFrameSize, 300);
+ setTimeout(window.updateFrameSize, 600);
+ 
+ // Also resize after MathJax completes
+ if (typeof MathJax !== 'undefined') {
+     MathJax.Hub.Register.StartupHook("End", window.updateFrameSize);
  }
 });
 
