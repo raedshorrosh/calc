@@ -5,7 +5,7 @@
 [[style href="https://raedshorrosh.github.io/jexcel.css" type="text/css" /]]
 [[style href="https://fonts.googleapis.com/css?family=Material+Icons" type="text/css" /]]
 [[script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.7/MathJax.js?config=TeX-MML-AM_HTMLorMML" /]]
-[[comment]] ver 1.15 removed 100% width, reverted columns to 120px, updated strict iframe resize [[/comment]]
+[[comment]] ver 1.16 dynamic resize based strictly on default STACK dimensions vs DOM size [[/comment]]
   
  <div style="display: inline-block; font-size:{@fontsize@}">
    <div id="spreadsheet" dir="ltr" ></div>
@@ -165,18 +165,14 @@ Promise.all(promises).then(([idForAns2]) => {
       try {
           const tableContainer = document.getElementById(uid_table);
           if (tableContainer && typeof stack_js !== 'undefined') {
-              // 1. Calculate explicit mathematical table width 
-              const totalColsWidth = widths.reduce((sum, val) => sum + (Number(val) || 120), 0);
+              // 1. Calculate the actual space the container and body are using
+              const requiredHeight = Math.max(document.body.scrollHeight, tableContainer.scrollHeight) + 30;
+              const requiredWidth = Math.max(document.body.scrollWidth, tableContainer.scrollWidth) + 30;
               
-              // Add exactly 60px for the row header numbers and borders. 
-              // This bypasses browser squashing issues completely.
-              const explicitTableWidth = totalColsWidth + 60; 
-              
-              // 2. Get maximum required height based strictly on the table's container
-              const newHeight = Math.max(document.body.scrollHeight, tableContainer.scrollHeight) + 30;
-              
-              // 3. Force the explicit width to guarantee it asks STACK for enough space
-              const newWidth = Math.max({#width#}, explicitTableWidth);
+              // 2. Compare against the default initial sizes {#width#} and {#height#}.
+              // Only increase the frame size if the DOM needs more space.
+              const newHeight = Math.max({#height#}, requiredHeight);
+              const newWidth = Math.max({#width#}, requiredWidth);
 
               // Use STACK's secure API to resize both Width and Height
               stack_js.resize_containing_frame(newWidth, newHeight);
