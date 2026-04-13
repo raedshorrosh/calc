@@ -5,9 +5,9 @@
 [[style href="https://raedshorrosh.github.io/jexcel.css" type="text/css" /]]
 [[style href="https://fonts.googleapis.com/css?family=Material+Icons" type="text/css" /]]
 [[script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.7/MathJax.js?config=TeX-MML-AM_HTMLorMML" /]]
-[[comment]] ver 1.14 auto-resize iframe and dynamic column widths added [[/comment]]
+[[comment]] ver 1.15 removed 100% width, reverted columns to 120px, updated strict iframe resize [[/comment]]
   
- <div style="display: flex; justify-content: center; width:100%; font-size:{@fontsize@}">
+ <div style="display: inline-block; font-size:{@fontsize@}">
    <div id="spreadsheet" dir="ltr" ></div>
    <div id="myView" style="display:none;" ></div>
  </div>
@@ -73,7 +73,7 @@ Promise.all(promises).then(([idForAns2]) => {
   if (nst=== undefined) {nested=[]} else  {nested=JSON.parse(nst.replace(/'/g, '"'))};
   
   // =========================================================================
-  // SET COLUMNS AND DYNAMIC WIDTHS
+  // SET COLUMNS 
   // =========================================================================
   var widths=[180,120,120];
   var colsConfig = [
@@ -83,9 +83,8 @@ Promise.all(promises).then(([idForAns2]) => {
   ];
 
   for (let i=3; i<{#Titles#}.length; i++){
-      // Calculate width based on Title length (approx 10px per char, min 120px)
-      var titleLength = {#Titles#}[i] ? String({#Titles#}[i]).length : 12;
-      widths[i] = Math.max(120, (titleLength * 10) + 40); 
+      // Reverted back to explicit 120px 
+      widths[i] = 120; 
       
       // Ensure the column configuration exists!
       colsConfig.push({ type: 'text', wordWrap:true }); 
@@ -166,24 +165,18 @@ Promise.all(promises).then(([idForAns2]) => {
       try {
           const tableContainer = document.getElementById(uid_table);
           if (tableContainer && typeof stack_js !== 'undefined') {
-              // 1. Calculate explicit table width by summing the column widths array
-              // This guarantees the iframe accommodates the table regardless of DOM squashing
+              // 1. Calculate explicit mathematical table width 
               const totalColsWidth = widths.reduce((sum, val) => sum + (Number(val) || 120), 0);
-              const explicitTableWidth = totalColsWidth + 100; // Add 100px for row number column and safe padding
               
-              // 2. Get maximum required height
-              const newHeight = Math.max(document.body.scrollHeight, document.documentElement.scrollHeight) + 30;
+              // Add exactly 60px for the row header numbers and borders. 
+              // This bypasses browser squashing issues completely.
+              const explicitTableWidth = totalColsWidth + 60; 
               
-              // 3. Get maximum required width (our explicit sum vs DOM measurements)
-              const contentWidth = Math.max(
-                  tableContainer.scrollWidth, 
-                  document.body.scrollWidth, 
-                  document.documentElement.scrollWidth,
-                  explicitTableWidth
-              );
+              // 2. Get maximum required height based strictly on the table's container
+              const newHeight = Math.max(document.body.scrollHeight, tableContainer.scrollHeight) + 30;
               
-              // 4. Ensure we don't shrink smaller than the initial width provided by STACK
-              const newWidth = Math.max({#width#}, contentWidth);
+              // 3. Force the explicit width to guarantee it asks STACK for enough space
+              const newWidth = Math.max({#width#}, explicitTableWidth);
 
               // Use STACK's secure API to resize both Width and Height
               stack_js.resize_containing_frame(newWidth, newHeight);
@@ -202,7 +195,7 @@ Promise.all(promises).then(([idForAns2]) => {
   // Observe the document body for overall height changes (e.g. dropdowns)
   resizeObserver.observe(document.body);
 
-  // Observe the table container for horizontal width changes
+  // Observe the table container for layout changes
   const tableEl = document.getElementById(uid_table);
   if (tableEl) {
       resizeObserver.observe(tableEl);
