@@ -5,7 +5,7 @@
 [[style href="https://raedshorrosh.github.io/jexcel.css" type="text/css" /]]
 [[style href="https://fonts.googleapis.com/css?family=Material+Icons" type="text/css" /]]
 [[script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.7/MathJax.js?config=TeX-MML-AM_HTMLorMML" /]]
-[[comment]] ver 1.15  [[/comment]]
+[[comment]] ver 1.14 auto-resize iframe and dynamic column widths added [[/comment]]
   
  <div style="display: flex; justify-content: center; width:100%; font-size:{@fontsize@}">
    <div id="spreadsheet" dir="ltr" ></div>
@@ -166,14 +166,24 @@ Promise.all(promises).then(([idForAns2]) => {
       try {
           const tableContainer = document.getElementById(uid_table);
           if (tableContainer && typeof stack_js !== 'undefined') {
-              // Get maximum required height
+              // 1. Calculate explicit table width by summing the column widths array
+              // This guarantees the iframe accommodates the table regardless of DOM squashing
+              const totalColsWidth = widths.reduce((sum, val) => sum + (Number(val) || 120), 0);
+              const explicitTableWidth = totalColsWidth + 100; // Add 100px for row number column and safe padding
+              
+              // 2. Get maximum required height
               const newHeight = Math.max(document.body.scrollHeight, document.documentElement.scrollHeight) + 30;
               
-              // Get maximum required width from the table, the body, or the HTML document
-              const contentWidth = Math.max(tableContainer.scrollWidth, document.body.scrollWidth, document.documentElement.scrollWidth);
+              // 3. Get maximum required width (our explicit sum vs DOM measurements)
+              const contentWidth = Math.max(
+                  tableContainer.scrollWidth, 
+                  document.body.scrollWidth, 
+                  document.documentElement.scrollWidth,
+                  explicitTableWidth
+              );
               
-              // Ensure we don't shrink smaller than the initial width, and add a generous 50px buffer
-              const newWidth = Math.max({#width#}, contentWidth + 50);
+              // 4. Ensure we don't shrink smaller than the initial width provided by STACK
+              const newWidth = Math.max({#width#}, contentWidth);
 
               // Use STACK's secure API to resize both Width and Height
               stack_js.resize_containing_frame(newWidth, newHeight);
