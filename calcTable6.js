@@ -73,11 +73,22 @@ Promise.all(promises).then(([idForAns2]) => {
   if (nst=== undefined) {nested=[]} else  {nested=JSON.parse(nst.replace(/'/g, '"'))};
   
   // =========================================================================
-  // CHANGE 1: Set columns 4 and onward to auto-size width
+  // CHANGE 1: Set columns 4 and onward to auto-size width AND define them
   // =========================================================================
   var widths=[180,120,120];
+  var colsConfig = [
+      { type: 'dropdown',   source:{#items#} },
+      { type: 'dropdown',   source:{#units#}  },
+      { type: 'text',   wordWrap:true  }
+  ];
+
   for (let i=3; i<{#Titles#}.length; i++){
-      widths[i] = 'auto'; 
+      // jSpreadsheet requires numerical pixel values, not the word 'auto'.
+      // Dynamically calculate width based on Title length (approx 10px per character, min 120px)
+      var titleLength = {#Titles#}[i] ? String({#Titles#}[i]).length : 12;
+      widths[i] = Math.max(120, (titleLength * 10) + 40); 
+      
+      colsConfig.push({ type: 'text', wordWrap:true }); // Ensure the column exists!
   };
   // =========================================================================
 
@@ -98,14 +109,11 @@ Promise.all(promises).then(([idForAns2]) => {
     data: data,
     colHeaders:{#Titles#},
     colWidths: widths,
+    columnResize: true, // Enables double-click column auto-resize and dragging
     allowManualInsertColumn:0,             
     allowInsertColumn:0,
     allowDeleteColumn:0,
-    columns: [
-        { type: 'dropdown',   source:{#items#} },
-        { type: 'dropdown',   source:{#units#}  },
-        { type: 'text',   wordWrap:true  },                                      
-    ],
+    columns: colsConfig,                                     
     nestedHeaders:nested,                                     
     toolbar:toolbar,
     updateTable: function (instance, cell, col, row, val, label, cellName) {
@@ -153,34 +161,27 @@ Promise.all(promises).then(([idForAns2]) => {
   });   
 
   // =========================================================================
-  // CHANGE 2: Auto-resize iframe width and height based on DOM content
+  // CHANGE 2: Auto-resize iframe width and height using STACK's native API
   // =========================================================================
   function autoResize() {
       try {
-          // FRAME_ID is typically provided by the parent STACK environment
-          const parentIframe = window.parent.document.getElementById(FRAME_ID);
-          const parentHolder = window.parent.document.getElementById(FRAME_ID.replace('stack-iframe', 'stack-iframe-holder'));
-          
-          if (parentIframe && parentHolder) {
-              const tableContainer = document.getElementById(uid_table);
-              
-              // Calculate new dimensions (adding 20px padding to avoid scrollbars)
-              const newHeight = (document.body.scrollHeight + 20) + 'px';
-              const newWidth = (tableContainer.scrollWidth + 20) + 'px';
+          const tableContainer = document.getElementById(uid_table);
+          if (tableContainer && typeof stack_js !== 'undefined') {
+              // Get actual DOM content sizes + padding to prevent scrollbars
+              const newHeight = document.body.scrollHeight + 20;
+              // Ensure we don't shrink smaller than the initial {#width#} provided by STACK
+              const newWidth = Math.max({#width#}, tableContainer.scrollWidth + 20);
 
-              // Apply styles to the parent elements
-              parentIframe.style.height = newHeight;
-              parentHolder.style.height = newHeight;
-              parentIframe.style.width = newWidth;
-              parentHolder.style.width = newWidth;
+              // Use STACK's secure API to resize both Width and Height safely!
+              stack_js.resize_containing_frame(newWidth, newHeight);
           }
       } catch (e) { 
-          // Silently fail if blocked by Same-Origin policy
+          console.error("Resize failed: ", e);
       }
   }
 
   // Initial trigger for resize
-  autoResize();
+  setTimeout(autoResize, 200); // Slight delay ensures jspreadsheet is fully rendered
 
   // Set up the ResizeObserver to catch ongoing layout changes
   const resizeObserver = new ResizeObserver(() => { autoResize(); });
@@ -199,4 +200,3 @@ Promise.all(promises).then(([idForAns2]) => {
 
 [[/script]]
 </div>
-[[/iframe]]
