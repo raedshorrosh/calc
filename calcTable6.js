@@ -6,6 +6,13 @@
         margin: 0;
         padding: 0;
     }
+    
+    /* Force jSpreadsheet to physically expand vertically instead of scrolling internally. 
+       This guarantees the iframe's scrollHeight increases when rows are added. */
+    .jexcel-content {
+        max-height: none !important;
+        overflow: visible !important;
+    }
 </style>
 [[script src="https://raedshorrosh.github.io/jexcel.js"/]]
 [[script src="https://raedshorrosh.github.io/jsuites.js"/]]
@@ -13,7 +20,7 @@
 [[style href="https://raedshorrosh.github.io/jexcel.css" type="text/css" /]]
 [[style href="https://fonts.googleapis.com/css?family=Material+Icons" type="text/css" /]]
 [[script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.7/MathJax.js?config=TeX-MML-AM_HTMLorMML" /]]
-[[comment]] ver 1.19 added hidden overflow and bottom buffer to fix drop-ups and scrollbars [[/comment]]
+[[comment]] ver 1.20 CSS override for jexcel-content to force vertical expansion & aggressive body observation [[/comment]]
   
  <!-- Added id="content-wrapper" and a 180px padding-bottom to ensure dropdowns always have space to drop DOWN -->
  <div id="content-wrapper" style="display: flex; justify-content: center; width:100%; font-size:{@fontsize@}; padding-bottom: 180px; box-sizing: border-box;">
@@ -149,36 +156,42 @@ stack_js.get_content("contentCT{#rqm#}").then((content) => {
  if (typeof stack_js !== 'undefined') {
      const updateFrameSize = () => {
          try {
-             // Use the wrapper's offsetHeight, which safely includes our 180px dropdown buffer!
+             // Calculate absolute required height based on the body's scrollHeight.
+             // Our wrapper's 180px padding is naturally included in this, forcing STACK 
+             // to allocate space for dropdowns!
              const wrapper = document.getElementById('content-wrapper');
-             const contentHeight = wrapper ? wrapper.offsetHeight : 0;
-             
-             // Small 10px safe margin 
-             const newHeight = contentHeight + 10;
+             const newHeight = Math.max(
+                 document.body.scrollHeight, 
+                 document.documentElement.scrollHeight,
+                 wrapper ? wrapper.scrollHeight : 0
+             ) + 10;
              
              // Keep the width locked to the STACK variable {#width#}
              stack_js.resize_containing_frame({#width#}, newHeight);
          } catch (e) {}
      };
 
-     // 1. Use ResizeObserver for overall container shifts
-     const wrapperContainer = document.getElementById('content-wrapper');
+     // 1. ResizeObserver for layout dimension shifts
      const resizeObserver = new ResizeObserver(updateFrameSize);
      resizeObserver.observe(document.body);
+     const wrapperContainer = document.getElementById('content-wrapper');
      if (wrapperContainer) {
          resizeObserver.observe(wrapperContainer);
      }
 
-     // 2. Add MutationObserver: This catches internal text wrapping/typing that ResizeObserver misses!
+     // 2. MutationObserver on the ENTIRE document.body to catch jSuites/dropdown events 
+     // and row injections that ResizeObserver often misses.
      const mutationObserver = new MutationObserver(updateFrameSize);
-     if (wrapperContainer) {
-         mutationObserver.observe(wrapperContainer, { 
-             childList: true, 
-             subtree: true, 
-             characterData: true, 
-             attributes: true 
-         });
-     }
+     mutationObserver.observe(document.body, { 
+         childList: true, 
+         subtree: true, 
+         attributes: true,
+         attributeFilter: ['class', 'style', 'height'] 
+     });
+     
+     // 3. Fallback: Aggressively catch user interactions just in case DOM observers lag
+     document.addEventListener('click', () => setTimeout(updateFrameSize, 50));
+     document.addEventListener('keyup', () => setTimeout(updateFrameSize, 50));
      
      // Fire once after a brief delay to ensure MathJax and jSpreadsheet have fully rendered
      setTimeout(updateFrameSize, 500);
