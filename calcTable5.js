@@ -25,6 +25,13 @@ MathJax.Hub.Config({
 MathJax.Hub.Config({
   asciimath2jax: {
     delimiters: [['`', '`']] // Example delimiters
+   
+  }
+   "HTML-CSS": { 
+    linebreaks: { automatic: true } 
+  },
+  SVG: { 
+    linebreaks: { automatic: true } 
   }
 });
 
