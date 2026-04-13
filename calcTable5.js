@@ -26,7 +26,7 @@ MathJax.Hub.Config({
   asciimath2jax: {
     delimiters: [['`', '`']] // Example delimiters
    
-  }
+  },
    "HTML-CSS": { 
     linebreaks: { automatic: true } 
   },
