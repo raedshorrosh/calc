@@ -5,7 +5,7 @@
 [[style href="https://raedshorrosh.github.io/jexcel.css" type="text/css" /]]
 [[style href="https://fonts.googleapis.com/css?family=Material+Icons" type="text/css" /]]
 [[script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.7/MathJax.js?config=TeX-MML-AM_HTMLorMML" /]]
-[[comment]] ver 1.14 [[/comment]]
+[[comment]] ver 1.15  [[/comment]]
   
  <div style="display: flex; justify-content: center; width:100%; font-size:{@fontsize@}">
    <div id="spreadsheet" dir="ltr" ></div>
@@ -166,10 +166,14 @@ Promise.all(promises).then(([idForAns2]) => {
       try {
           const tableContainer = document.getElementById(uid_table);
           if (tableContainer && typeof stack_js !== 'undefined') {
-              // Get actual DOM content sizes + padding to prevent scrollbars
-              const newHeight = document.body.scrollHeight + 20;
-              // Ensure we don't shrink smaller than the initial width
-              const newWidth = Math.max({#width#}, tableContainer.scrollWidth + 20);
+              // Get maximum required height
+              const newHeight = Math.max(document.body.scrollHeight, document.documentElement.scrollHeight) + 30;
+              
+              // Get maximum required width from the table, the body, or the HTML document
+              const contentWidth = Math.max(tableContainer.scrollWidth, document.body.scrollWidth, document.documentElement.scrollWidth);
+              
+              // Ensure we don't shrink smaller than the initial width, and add a generous 50px buffer
+              const newWidth = Math.max({#width#}, contentWidth + 50);
 
               // Use STACK's secure API to resize both Width and Height
               stack_js.resize_containing_frame(newWidth, newHeight);
