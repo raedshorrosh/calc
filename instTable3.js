@@ -353,13 +353,24 @@ cellsToGrade.forEach(({ row, col,theGrade }) => {
     table.deleteRow();
   };
 var answered=false;
+/*
 stack_js.get_content("content{#rqm#}").then((content) => {
 if (content !== null) {
 if  (!answered ) 
 {
    answered=true;
    checkAnswer();
-}}});   
+}}});
+*/
+ // Check if Moodle has locked the STACK input (which happens after submission)
+var isQuestionReadOnly = dataInput.hasAttribute('readonly') || dataInput.readOnly || dataInput.disabled;
+
+if (isQuestionReadOnly) {
+    if (!answered) {
+        answered = true;
+        checkAnswer();
+    }
+}
  });
 [[/script]]
 </div>
