@@ -362,15 +362,42 @@ if  (!answered )
    checkAnswer();
 }}});
 */
- // Check if Moodle has locked the STACK input (which happens after submission)
-var isQuestionReadOnly = dataInput.hasAttribute('readonly') || dataInput.readOnly || dataInput.disabled;
 
-if (isQuestionReadOnly) {
-    if (!answered) {
-        answered = true;
-        checkAnswer();
+// Check twice a second (500ms) to see if Moodle has graded/locked the question
+var checkInterval = setInterval(function() {
+    var isLocked = false;
+    
+    // 1. Check if the input itself got locked
+    if (dataInput.hasAttribute('readonly') || dataInput.readOnly || dataInput.disabled) {
+        isLocked = true;
     }
-}
+    
+    // 2. Check if the Moodle question container (which holds this specific input) got graded
+    // Moodle adds these classes to the outer question <div> when submitted
+    var questionContainer = dataInput.closest('.que');
+    if (questionContainer) {
+        if (questionContainer.classList.contains('correct') || 
+            questionContainer.classList.contains('incorrect') || 
+            questionContainer.classList.contains('partiallycorrect') ||
+            questionContainer.classList.contains('complete')) {
+            isLocked = true;
+        }
+    }
+
+    // 3. Also check if we are in the post-quiz Review page
+    if (window.location.href.indexOf('review.php') !== -1) {
+        isLocked = true;
+    }
+
+    // If any of the above are true, trigger the feedback!
+    if (isLocked) {
+        if (!answered) {
+            answered = true;
+            clearInterval(checkInterval); // Stop checking to save browser memory
+            checkAnswer();                // Show the ✔️ and ❌
+        }
+    }
+}, 500);
  });
 [[/script]]
 </div>
