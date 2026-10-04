@@ -1,4 +1,32 @@
- [[iframe]]
+<span id="hintBridge_{#rqm#}" style="display:none;"></span>
+<script>
+(function() {
+  function restoreHintId() {
+    var marker = document.getElementById("hintBridge_{#rqm#}");
+    if (!marker) return;
+    var qBox = marker.closest(".que");
+    if (!qBox) return;
+
+    // Look specifically inside Moodle's orange feedback/hint box (.outcome)
+    var outcomeBox = qBox.querySelector(".outcome");
+    if (!outcomeBox) return;
+
+    var html = outcomeBox.innerHTML;
+    if (html.indexOf("כפתור" + " hint") !== -1 || html.indexOf("[" + "false]") !== -1) {
+      marker.id = "contentCT{#rqm#}";
+      marker.textContent = "[false]";
+    }
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", restoreHintId);
+  } else {
+    restoreHintId();
+  }
+})();
+</script>
+
+[[iframe]]
 [[script src="https://raedshorrosh.github.io/jexcel.js"/]]
 [[script src="https://raedshorrosh.github.io/jsuites.js"/]]
 [[style href="https://raedshorrosh.github.io/jsuites.css" type="text/css" /]]
