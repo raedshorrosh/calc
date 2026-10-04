@@ -256,7 +256,7 @@ if  (!answered )
     // Only run AI if the student has submitted (input is locked/readonly)
     if (!isInputReadOnly) return;
 
-    const GEMINI_API_KEY = 'PASTE_YOUR_GEMINI_API_KEY_HERE';
+    const GEMINI_API_KEY = {#key#};
     const GEMINI_MODEL   = 'gemini-2.5-flash';
     const GEMINI_URL     = 'https://generativelanguage.googleapis.com/v1beta/models/' +
                            GEMINI_MODEL + ':generateContent?key=' + encodeURIComponent(GEMINI_API_KEY);
