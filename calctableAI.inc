@@ -267,8 +267,11 @@ if  (!answered )
       'The Teacher Reference Table contains the given numbers and spreadsheet formulas (e.g. =D2*D3). ' +
       'Important: The student does NOT have to include all rows or put rows in the exact same order as the reference table, and may write calculated numbers or formulas. ' +
       'Compare the Student Table against the Teacher Reference Table and Question Text. ' +
-      'Reply briefly and constructively in Hebrew: point out any wrong units, wrong mole ratios, or calculation errors without giving away the final numerical answer.';
-
+      'Reply briefly and constructively in Hebrew: point out any wrong units, wrong mole ratios, or calculation errors without giving away the final numerical answer. ' +
+      'STRICT FORMATTING RULES: ' +
+      '1. NEVER use backticks (`) or Markdown asterisks (**). ' +
+      '2. NEVER use $...$ for math. Always use \\(...\\) for math and chemistry expressions, e.g. \\(C = \\frac{n}{V}\\). ' +
+      '3. Always wrap spreadsheet formulas and cell references inside \\(\\text{...}\\) so they display left-to-right in Hebrew, e.g. \\(\\text{=D1/D2}\\) or \\(\\text{D3}\\).';
     // 2. Show the feedback box below the table
     const aiOutput = document.getElementById('aiView');
     aiOutput.id = 'aiView_' + uid_table;
