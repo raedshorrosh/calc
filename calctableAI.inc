@@ -257,7 +257,7 @@ if  (!answered )
     if (!isInputReadOnly) return;
 
     const GEMINI_API_KEY = {#something#};
-    const GEMINI_MODEL   = 'gemini-2.5-flash';
+    const GEMINI_MODEL   = 'gemini-3.8-flash';
     const GEMINI_URL     = 'https://generativelanguage.googleapis.com/v1beta/models/' +
                            GEMINI_MODEL + ':generateContent?key=' + encodeURIComponent(GEMINI_API_KEY);
 
@@ -310,7 +310,7 @@ if  (!answered )
       ],
       generationConfig: {
         temperature: 0.2,
-        maxOutputTokens: 600
+        maxOutputTokens: 2048
       }
     };
 
