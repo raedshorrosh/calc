@@ -254,26 +254,32 @@ if  (!answered )
 
     if (!isInputReadOnly) return;
 
-    // Pull API key and prompt directly from Maxima variables
+    // Skip calling AI if the student table is completely empty
+    const studentRows = table.getData();
+    const hasAnyContent = studentRows.some(row => row.some(cell => String(cell).trim() !== ''));
+    if (!hasAnyContent) return;
+
     const GEMINI_API_KEY = {#something#};
-    const GEMINI_MODEL   = 'gemini-3.8-flash';
-    const GEMINI_URL     = 'https://generativelanguage.googleapis.com/v1beta/models/' +
-                           GEMINI_MODEL + ':generateContent?key=' + encodeURIComponent(GEMINI_API_KEY);
-
-    const FORMATTING_RULES =
-      ' STRICT FORMATTING RULES: ' +
-      '1. NEVER use backticks (`) or Markdown asterisks (**). ' +
-      '2. NEVER use $...$ for math. Always use \\(...\\) for math and chemistry expressions, e.g. \\(C = \\frac{n}{V}\\). ' +
-      '3. Always wrap spreadsheet formulas and cell references inside \\(\\text{...}\\) so they display left-to-right in Hebrew, e.g. \\(\\text{=D1/D2}\\) or \\(\\text{D3}\\).';
-
-    const SYSTEM_PROMPT = {#ai_prompt#} + FORMATTING_RULES;
+    //  automatic instant fallback if one is busy
+      const GEMINI_MODELS = ['gemini-3.8-flash', 'gemini-3.5-flash-lite'];
+    const SYSTEM_PROMPT  = {#ai_prompt#};
 
     const aiOutput = document.getElementById('aiView');
     aiOutput.id = 'aiView_' + uid_table;
     aiOutput.style.cssText = 'display: block; margin-top: 10px; max-height: 180px; overflow-y: auto; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; background: #f8fafc; white-space: pre-wrap; font-size: 15px; font-family: Arial, sans-serif; text-align: right;';
-    aiOutput.textContent = 'בודק את טבלת החישובים באמצעות AI…';
 
     stack_js.resize_containing_frame({#width#}, parseInt({#height#}, 10) + 180 + "px");
+
+    // Return cached response immediately if student refreshes the page
+    const cacheKey = 'ai_eval_' + uid_table + '_' + JSON.stringify(studentRows);
+    const cachedReply = sessionStorage.getItem(cacheKey);
+    if (cachedReply) {
+      aiOutput.textContent = cachedReply;
+      MathJax.Hub.Queue(['Typeset', MathJax.Hub, aiOutput]);
+      return;
+    }
+
+    aiOutput.textContent = 'בודק את טבלת החישובים באמצעות AI…';
 
     let questionText = '';
     try {
@@ -292,7 +298,7 @@ if  (!answered )
       JSON.stringify({#data#}) + '\n' +
       'Final Teacher Answer (`ta`): ' + JSON.stringify("{#ta#}") + '\n\n' +
       '=== STUDENT TABLE ===\n' +
-      JSON.stringify(table.getData());
+      JSON.stringify(studentRows);
 
     const payload = {
       system_instruction: {
@@ -305,16 +311,21 @@ if  (!answered )
         }
       ],
       generationConfig: {
-        temperature: 0.2,
-        maxOutputTokens: 2048
+        maxOutputTokens: 1024,
+        thinkingConfig: {
+          thinkingLevel: 'low' // Minimizes thinking delay for fast response
+        }
       }
     };
 
-    // Auto-retry up to 3 times if Gemini returns 503/429 (System Busy / Overloaded)
-    const maxRetries = 3;
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    let lastError = '';
+    for (let i = 0; i < GEMINI_MODELS.length; i++) {
+      const modelName = GEMINI_MODELS[i];
+      const url = 'https://generativelanguage.googleapis.com/v1beta/models/' +
+                  modelName + ':generateContent?key=' + encodeURIComponent(GEMINI_API_KEY);
+
       try {
-        const resp = await fetch(GEMINI_URL, {
+        const resp = await fetch(url, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(payload)
@@ -323,36 +334,32 @@ if  (!answered )
         const resData = await resp.json();
 
         if (!resp.ok) {
-          const errMsg = (resData.error && resData.error.message) ? resData.error.message : ('HTTP ' + resp.status);
-          const isBusy = resp.status === 503 || resp.status === 429 || /busy|overloaded|unavailable|demand/i.test(errMsg);
-
-          if (isBusy && attempt < maxRetries) {
-            aiOutput.textContent = 'המערכת עמוסה, מנסה שוב (' + attempt + '/' + (maxRetries - 1) + ')…';
-            await new Promise(r => setTimeout(r, attempt * 2000));
-            continue;
-          }
-          throw new Error(errMsg);
+          lastError = (resData.error && resData.error.message) ? resData.error.message : ('HTTP ' + resp.status);
+          console.warn('[Gemini Eval] ' + modelName + ' failed (' + lastError + '), trying next model…');
+          continue; // Immediately try the next model in GEMINI_MODELS
         }
 
-        const replyText =
+        // Extract non-thought text part
+        const parts = (
           resData.candidates &&
           resData.candidates[0] &&
           resData.candidates[0].content &&
-          resData.candidates[0].content.parts &&
-          resData.candidates[0].content.parts[0]
-            ? resData.candidates[0].content.parts[0].text
-            : 'לא התקבלה תשובה מה-AI.';
+          resData.candidates[0].content.parts
+        ) || [];
+        const textPart = parts.find(p => !p.thought && p.text) || parts[0];
+        const replyText = textPart ? textPart.text : 'לא התקבלה תשובה מה-AI.';
 
+        sessionStorage.setItem(cacheKey, replyText);
         aiOutput.textContent = replyText;
         MathJax.Hub.Queue(['Typeset', MathJax.Hub, aiOutput]);
-        break;
+        return;
       } catch (err) {
-        if (attempt === maxRetries) {
-          aiOutput.textContent = '⚠ שגיאה בבדיקת ה-AI: ' + err.message;
-          console.error('[Gemini Table Eval]', err);
-        }
+        lastError = err.message;
+        console.warn('[Gemini Eval] Network error on ' + modelName + ':', err);
       }
     }
+
+    aiOutput.textContent = '⚠ שגיאה בבדיקת ה-AI: ' + lastError;
   })();
   // ── AUTO GEMINI EVALUATION END ───────────────────────────────────
  });
