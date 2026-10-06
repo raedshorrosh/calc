@@ -261,7 +261,7 @@ if  (!answered )
 
     const GEMINI_API_KEY = {#something#};
     //  automatic instant fallback if one is busy
-      const GEMINI_MODELS = ['gemini-3.8-flash', 'gemini-3.5-flash-lite'];
+      const GEMINI_MODELS = ['gemini-3.8-flash'];
     const SYSTEM_PROMPT  = {#ai_prompt#};
 
     const aiOutput = document.getElementById('aiView');
