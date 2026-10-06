@@ -235,8 +235,13 @@ if  (!answered )
  localStorage.setItem("showhint",{#rqm#});
 
 }}});
-
 // ── AUTO GEMINI EVALUATION WHEN INPUT IS READONLY ────────────────
+  // ערכי ברירת מחדל למקרה שאחד המשתנים לא הוגדר ב-Maxima בשאלה מסוימת (מונע ReferenceError)
+  var something   = '';
+  var ai_models   = ['gemini-3.8-flash', 'gemini-3.8-pro'];
+  var ai_thinking = 'medium';
+  var ai_prompt   = '';
+
   (async function autoRunGeminiOnReadOnly() {
     let isInputReadOnly = Boolean(
       dataInput.readOnly ||
@@ -254,14 +259,29 @@ if  (!answered )
 
     if (!isInputReadOnly) return;
 
-    // Skip calling AI if the student table is completely empty
-    const studentRows = table.getData();
-    const hasAnyContent = studentRows.some(row => row.some(cell => String(cell).trim() !== ''));
+    // 1. קריאת נוסחאות התלמיד והערכים המחושבים מהטבלה
+    const studentFormulas = table.getData();
+    const hasAnyContent = studentFormulas.some(row => row.some(cell => String(cell).trim() !== ''));
     if (!hasAnyContent) return;
 
+    const studentEvaluated = studentFormulas.map((row, rIdx) =>
+      row.map((cell, cIdx) => {
+        try {
+          const td = table.getCellFromCoords(cIdx, rIdx);
+          return td ? td.textContent.trim() : cell;
+        } catch (e) {
+          return cell;
+        }
+      })
+    );
+
+    // 2. משיכת המפתח, המודלים, רמת החשיבה והפרומפט מתוך Maxima
     const GEMINI_API_KEY = {#something#};
-    //  automatic instant fallback if one is busy
-      const GEMINI_MODELS = ['gemini-3.8-flash'];
+    if (!GEMINI_API_KEY) return;
+
+    const rawModels      = {#ai_models#};
+    const GEMINI_MODELS  = Array.isArray(rawModels) ? rawModels : [String(rawModels)];
+    const THINKING_LEVEL = String({#ai_thinking#} || '').trim().toLowerCase();
     const SYSTEM_PROMPT  = {#ai_prompt#};
 
     const aiOutput = document.getElementById('aiView');
@@ -270,8 +290,8 @@ if  (!answered )
 
     stack_js.resize_containing_frame({#width#}, parseInt({#height#}, 10) + 180 + "px");
 
-    // Return cached response immediately if student refreshes the page
-    const cacheKey = 'ai_eval_' + uid_table + '_' + JSON.stringify(studentRows);
+    // 3. בדיקת זיכרון מטמון (שומר תוצאה אם הדף מתרענן)
+    const cacheKey = 'ai_eval_' + uid_table + '_' + THINKING_LEVEL + '_' + JSON.stringify(studentFormulas);
     const cachedReply = sessionStorage.getItem(cacheKey);
     if (cachedReply) {
       aiOutput.textContent = cachedReply;
@@ -297,8 +317,22 @@ if  (!answered )
       '=== TEACHER REFERENCE SOLUTION (from Maxima `data`) ===\n' +
       JSON.stringify({#data#}) + '\n' +
       'Final Teacher Answer (`ta`): ' + JSON.stringify("{#ta#}") + '\n\n' +
-      '=== STUDENT TABLE ===\n' +
-      JSON.stringify(studentRows);
+      '=== STUDENT TABLE (Raw Formulas/Inputs) ===\n' +
+      JSON.stringify(studentFormulas) + '\n\n' +
+      '=== STUDENT TABLE (Calculated Values Shown on Screen) ===\n' +
+      JSON.stringify(studentEvaluated);
+
+    // 4. בניית הגדרות היצירה כולל רמת החשיבה מ-Maxima
+    const genConfig = {
+      temperature: 0.2,
+      maxOutputTokens: 2048
+    };
+
+    if (THINKING_LEVEL && THINKING_LEVEL !== 'default' && THINKING_LEVEL !== 'none') {
+      genConfig.thinkingConfig = {
+        thinkingLevel: THINKING_LEVEL
+      };
+    }
 
     const payload = {
       system_instruction: {
@@ -310,52 +344,54 @@ if  (!answered )
           parts: [{ text: userPrompt }]
         }
       ],
-      generationConfig: {
-        maxOutputTokens: 1024,
-        thinkingConfig: {
-          thinkingLevel: 'low' // Minimizes thinking delay for fast response
-        }
-      }
+      generationConfig: genConfig
     };
 
+    // 5. קריאה למודלים לפי הסדר שהוגדר ב-ai_models עם ניסיון חוזר במקרה של עומס
     let lastError = '';
-    for (let i = 0; i < GEMINI_MODELS.length; i++) {
-      const modelName = GEMINI_MODELS[i];
+    for (let m = 0; m < GEMINI_MODELS.length; m++) {
+      const modelName = GEMINI_MODELS[m];
       const url = 'https://generativelanguage.googleapis.com/v1beta/models/' +
                   modelName + ':generateContent?key=' + encodeURIComponent(GEMINI_API_KEY);
 
-      try {
-        const resp = await fetch(url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
-        });
+      const maxRetries = 2;
+      for (let attempt = 1; attempt <= maxRetries; attempt++) {
+        try {
+          const resp = await fetch(url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+          });
 
-        const resData = await resp.json();
+          const resData = await resp.json();
 
-        if (!resp.ok) {
-          lastError = (resData.error && resData.error.message) ? resData.error.message : ('HTTP ' + resp.status);
-          console.warn('[Gemini Eval] ' + modelName + ' failed (' + lastError + '), trying next model…');
-          continue; // Immediately try the next model in GEMINI_MODELS
+          if (!resp.ok) {
+            lastError = (resData.error && resData.error.message) ? resData.error.message : ('HTTP ' + resp.status);
+            const isBusy = resp.status === 503 || resp.status === 429 || /busy|overloaded|unavailable|demand/i.test(lastError);
+
+            if (isBusy && attempt < maxRetries) {
+              await new Promise(r => setTimeout(r, 1200));
+              continue;
+            }
+            break; // עובר למודל הבא ברשימת ai_models
+          }
+
+          const parts = (
+            resData.candidates &&
+            resData.candidates[0] &&
+            resData.candidates[0].content &&
+            resData.candidates[0].content.parts
+          ) || [];
+          const textPart = parts.find(p => !p.thought && p.text) || parts[0];
+          const replyText = textPart ? textPart.text : 'לא התקבלה תשובה מה-AI.';
+
+          sessionStorage.setItem(cacheKey, replyText);
+          aiOutput.textContent = replyText;
+          MathJax.Hub.Queue(['Typeset', MathJax.Hub, aiOutput]);
+          return;
+        } catch (err) {
+          lastError = err.message;
         }
-
-        // Extract non-thought text part
-        const parts = (
-          resData.candidates &&
-          resData.candidates[0] &&
-          resData.candidates[0].content &&
-          resData.candidates[0].content.parts
-        ) || [];
-        const textPart = parts.find(p => !p.thought && p.text) || parts[0];
-        const replyText = textPart ? textPart.text : 'לא התקבלה תשובה מה-AI.';
-
-        sessionStorage.setItem(cacheKey, replyText);
-        aiOutput.textContent = replyText;
-        MathJax.Hub.Queue(['Typeset', MathJax.Hub, aiOutput]);
-        return;
-      } catch (err) {
-        lastError = err.message;
-        console.warn('[Gemini Eval] Network error on ' + modelName + ':', err);
       }
     }
 
