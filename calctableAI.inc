@@ -236,9 +236,8 @@ if  (!answered )
 
 }}});
 
-  // ── AUTO GEMINI EVALUATION WHEN INPUT IS READONLY ────────────────
+// ── AUTO GEMINI EVALUATION WHEN INPUT IS READONLY ────────────────
   (async function autoRunGeminiOnReadOnly() {
-    // 1. Check if dataInput in iframe OR ans1/ans2 on parent page is readonly/disabled
     let isInputReadOnly = Boolean(
       dataInput.readOnly ||
       dataInput.disabled ||
@@ -253,35 +252,29 @@ if  (!answered )
       }
     }
 
-    // Only run AI if the student has submitted (input is locked/readonly)
     if (!isInputReadOnly) return;
 
+    // Pull API key and prompt directly from Maxima variables
     const GEMINI_API_KEY = {#something#};
     const GEMINI_MODEL   = 'gemini-3.8-flash';
     const GEMINI_URL     = 'https://generativelanguage.googleapis.com/v1beta/models/' +
                            GEMINI_MODEL + ':generateContent?key=' + encodeURIComponent(GEMINI_API_KEY);
 
-    const SYSTEM_PROMPT =
-      'You are an experienced chemistry teacher evaluating a student stoichiometry calculation table in Hebrew. ' +
-      'Notice the spreadsheet columns start at A (A=גודל, B=יחידות, C=הערות, D=4th col, E=5th col, F=6th col, G=7th col, etc.) and rows start at 1. ' +
-      'The Teacher Reference Table contains the given numbers and spreadsheet formulas (e.g. =D2*D3). ' +
-      'Important: The student does NOT have to include all rows or put rows in the exact same order as the reference table, and may write calculated numbers or formulas. ' +
-      'Compare the Student Table against the Teacher Reference Table and Question Text. ' +
-      'Reply briefly and constructively in Hebrew: point out any wrong units, wrong mole ratios, or calculation errors without giving away the final numerical answer. ' +
-      'STRICT FORMATTING RULES: ' +
+    const FORMATTING_RULES =
+      ' STRICT FORMATTING RULES: ' +
       '1. NEVER use backticks (`) or Markdown asterisks (**). ' +
       '2. NEVER use $...$ for math. Always use \\(...\\) for math and chemistry expressions, e.g. \\(C = \\frac{n}{V}\\). ' +
       '3. Always wrap spreadsheet formulas and cell references inside \\(\\text{...}\\) so they display left-to-right in Hebrew, e.g. \\(\\text{=D1/D2}\\) or \\(\\text{D3}\\).';
-    // 2. Show the feedback box below the table
+
+    const SYSTEM_PROMPT = {#ai_prompt#} + FORMATTING_RULES;
+
     const aiOutput = document.getElementById('aiView');
     aiOutput.id = 'aiView_' + uid_table;
     aiOutput.style.cssText = 'display: block; margin-top: 10px; max-height: 180px; overflow-y: auto; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; background: #f8fafc; white-space: pre-wrap; font-size: 15px; font-family: Arial, sans-serif; text-align: right;';
     aiOutput.textContent = 'בודק את טבלת החישובים באמצעות AI…';
 
-    // Expand iframe height slightly so the AI feedback is visible
     stack_js.resize_containing_frame({#width#}, parseInt({#height#}, 10) + 180 + "px");
 
-    // 3. Get captured Question Text from the parent bridge
     let questionText = '';
     try {
       const content = await stack_js.get_content("qtext{#rqm#}");
@@ -317,38 +310,51 @@ if  (!answered )
       }
     };
 
-    try {
-      const resp = await fetch(GEMINI_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
+    // Auto-retry up to 3 times if Gemini returns 503/429 (System Busy / Overloaded)
+    const maxRetries = 3;
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        const resp = await fetch(GEMINI_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
 
-      const resData = await resp.json();
+        const resData = await resp.json();
 
-      if (!resp.ok) {
-        const errMsg = (resData.error && resData.error.message) ? resData.error.message : ('HTTP ' + resp.status);
-        throw new Error(errMsg);
+        if (!resp.ok) {
+          const errMsg = (resData.error && resData.error.message) ? resData.error.message : ('HTTP ' + resp.status);
+          const isBusy = resp.status === 503 || resp.status === 429 || /busy|overloaded|unavailable|demand/i.test(errMsg);
+
+          if (isBusy && attempt < maxRetries) {
+            aiOutput.textContent = 'המערכת עמוסה, מנסה שוב (' + attempt + '/' + (maxRetries - 1) + ')…';
+            await new Promise(r => setTimeout(r, attempt * 2000));
+            continue;
+          }
+          throw new Error(errMsg);
+        }
+
+        const replyText =
+          resData.candidates &&
+          resData.candidates[0] &&
+          resData.candidates[0].content &&
+          resData.candidates[0].content.parts &&
+          resData.candidates[0].content.parts[0]
+            ? resData.candidates[0].content.parts[0].text
+            : 'לא התקבלה תשובה מה-AI.';
+
+        aiOutput.textContent = replyText;
+        MathJax.Hub.Queue(['Typeset', MathJax.Hub, aiOutput]);
+        break;
+      } catch (err) {
+        if (attempt === maxRetries) {
+          aiOutput.textContent = '⚠ שגיאה בבדיקת ה-AI: ' + err.message;
+          console.error('[Gemini Table Eval]', err);
+        }
       }
-
-      const replyText =
-        resData.candidates &&
-        resData.candidates[0] &&
-        resData.candidates[0].content &&
-        resData.candidates[0].content.parts &&
-        resData.candidates[0].content.parts[0]
-          ? resData.candidates[0].content.parts[0].text
-          : 'לא התקבלה תשובה מה-AI.';
-
-      aiOutput.textContent = replyText;
-      MathJax.Hub.Queue(['Typeset', MathJax.Hub, aiOutput]);
-    } catch (err) {
-      aiOutput.textContent = '⚠ שגיאה בבדיקת ה-AI: ' + err.message;
-      console.error('[Gemini Table Eval]', err);
     }
   })();
   // ── AUTO GEMINI EVALUATION END ───────────────────────────────────
-
  });
 
 [[/script]]
