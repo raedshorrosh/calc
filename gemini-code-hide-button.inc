@@ -214,7 +214,7 @@ Promise.all(promises).then(([idForAns2, idForAns3]) => {
       }
 
       if (savedReply && savedReply.trim() !== '') {
-        aiOutput.style.cssText = 'display: block; margin-top: 10px; max-height: 180px; overflow-y: auto; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; background: #f8fafc; white-space: pre-wrap; font-size: 15px; font-family: Arial, sans-serif; text-align: right;';
+        aiOutput.style.cssText = 'display: block; margin-top: 10px; max-height: 500px; overflow-y: auto; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; background: #f8fafc; white-space: pre-wrap; font-size: 15px; font-family: Arial, sans-serif; text-align: right;';
         aiOutput.innerHTML = savedReply;
         MathJax.Hub.Queue(['Typeset', MathJax.Hub, aiOutput]);
       }
