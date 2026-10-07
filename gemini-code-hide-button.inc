@@ -183,7 +183,7 @@ Promise.all(promises).then(([idForAns2, idForAns3]) => {
     }
   });
 
-  // ── AI SUBMISSION AND DISPLAY LOGIC ────────────────
+// ── AI SUBMISSION AND DISPLAY LOGIC ────────────────
   (async function setupAiLogic() {
     let isInputReadOnly = Boolean(dataInput.readOnly || dataInput.disabled || dataInput.hasAttribute('readonly'));
     if (!isInputReadOnly) {
@@ -193,12 +193,29 @@ Promise.all(promises).then(([idForAns2, idForAns3]) => {
 
     const aiOutput = document.getElementById('aiView');
     const customSubmitBtn = document.getElementById('aiSubmitBtn');
+    const backupCacheKey = 'ai_eval_backup_' + uid_table;
 
-    // 1. If question is already submitted (readonly), just display the saved AI text from ans3
+    // 1. If question is submitted (readonly), display the saved AI text
     if (isInputReadOnly) {
-      if (aiInput && aiInput.value && aiInput.value.trim() !== '') {
+      let savedReply = (aiInput && aiInput.value) ? aiInput.value : '';
+      
+      // If STACK dropped the save (due to speed or CAS validation), use our local backup
+      if (!savedReply || savedReply.trim() === '') {
+        savedReply = localStorage.getItem(backupCacheKey) || '';
+      }
+
+      // STACK String inputs automatically add double quotes around text. Clean them up:
+      if (savedReply.startsWith('"') && savedReply.endsWith('"')) {
+        try { 
+          savedReply = JSON.parse(savedReply); 
+        } catch(e) { 
+          savedReply = savedReply.slice(1, -1); 
+        }
+      }
+
+      if (savedReply && savedReply.trim() !== '') {
         aiOutput.style.cssText = 'display: block; margin-top: 10px; max-height: 180px; overflow-y: auto; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; background: #f8fafc; white-space: pre-wrap; font-size: 15px; font-family: Arial, sans-serif; text-align: right;';
-        aiOutput.textContent = aiInput.value;
+        aiOutput.textContent = savedReply;
         MathJax.Hub.Queue(['Typeset', MathJax.Hub, aiOutput]);
       }
       return; // Do not show the submit button, stop execution
@@ -325,7 +342,6 @@ Promise.all(promises).then(([idForAns2, idForAns3]) => {
         if (success) break;
       }
 
-      // If all models failed, save a generic fallback message
       if (!finalReply) {
         finalReply = 'מערכת ה-AI עמוסה כרגע. התשובה הוגשה ללא משוב אוטומטי.';
       }
@@ -335,9 +351,14 @@ Promise.all(promises).then(([idForAns2, idForAns3]) => {
         aiInput.value = finalReply;
         aiInput.dispatchEvent(new Event('change'));
       }
+      
+      // Save a backup in case Moodle drops the string
+      localStorage.setItem(backupCacheKey, finalReply);
 
-      // 4. Send command to the parent page to click the hidden Moodle submit button
-      window.parent.postMessage({ action: "triggerSubmit{#rqm#}" }, "*");
+      // 4. WAIT 500ms for STACK to sync the input to Moodle before submitting!
+      setTimeout(function() {
+        window.parent.postMessage({ action: "triggerSubmit{#rqm#}" }, "*");
+      }, 500);
     };
   })();
   // ── AI SUBMISSION END ───────────────────────────────────
