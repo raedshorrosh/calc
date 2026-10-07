@@ -213,12 +213,21 @@ Promise.all(promises).then(([idForAns2, idForAns3]) => {
         try { savedReply = JSON.parse(savedReply); } catch(e) { savedReply = savedReply.slice(1, -1); }
       }
 
-      // --- EXTRACT JSON ROW MARKS ---
+    // --- EXTRACT JSON ROW MARKS ---
       let rowMarks = [];
-      let parts = savedReply.split('<!--ROW_MARKS_JSON-->');
+      let parts = savedReply.split('@@@ROW_MARKS@@@');
       if (parts.length > 1) {
         savedReply = parts[0]; // Keep only the HTML for the bottom summary
-        try { rowMarks = JSON.parse(parts[1].trim()); } catch(e) { console.warn("Could not parse row marks JSON", e); }
+        
+        let jsonStr = parts[1].trim();
+        // Clean up markdown code blocks if the AI accidentally added them
+        jsonStr = jsonStr.replace(/^```json/i, '').replace(/^```/, '').replace(/```$/, '').trim();
+        
+        try { 
+          rowMarks = JSON.parse(jsonStr); 
+        } catch(e) { 
+          console.warn("Could not parse row marks JSON:", jsonStr, e); 
+        }
       }
 
       // --- DISPLAY HTML SUMMARY ---
@@ -230,17 +239,23 @@ Promise.all(promises).then(([idForAns2, idForAns3]) => {
 
       // --- DYNAMICALLY INSERT "ציון" (GRADE) COLUMN INTO THE TABLE ---
       if (rowMarks.length > 0) {
-        let headers = table.getHeaders().split(',');
-        if (headers.indexOf('ציון') === -1) {
-          let originalCols = {#Titles#}.length;
+        let originalCols = {#Titles#}.length;
+        
+        // Count how many columns currently exist in the table
+        let headersStr = table.getHeaders();
+        let currentColCount = headersStr ? headersStr.split(',').length : originalCols;
+        
+        // Only insert if we haven't already inserted the grade column
+        if (currentColCount === originalCols) {
           
           // Insert 1 column at the end of the table
           table.insertColumn(1, originalCols, false, { type: 'text', title: 'ציון', readOnly: true, width: 120 });
           
           // Populate the grades for each row
           for (let i = 0; i < rowMarks.length; i++) {
-            if (rowMarks[i]) {
-              table.setValueFromCoords(originalCols, i, rowMarks[i], true); // true forces bypass readonly
+            if (rowMarks[i] !== undefined && rowMarks[i] !== null) {
+              // true forces bypass of the readonly restriction
+              table.setValueFromCoords(originalCols, i, String(rowMarks[i]), true); 
               
               // Highlight the teacher mark cell visually
               let cell = table.getCellFromCoords(originalCols, i);
