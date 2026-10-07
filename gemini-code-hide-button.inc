@@ -34,8 +34,8 @@
       }
     }
 
-    // 4. Hide Moodle's default "Check" (בדוק) button box (.imcontrols)
-    var imcontrols = qBox.querySelector(".imcontrols");
+// 4. Hide Moodle's default "Check" (בדוק) button box
+    var imcontrols = qBox.querySelector(".imcontrols, .im-controls");
     if (imcontrols) {
       imcontrols.style.display = "none";
     }
@@ -49,7 +49,7 @@
         var qBox = marker.closest(".que");
         if (qBox) {
           // Find the hidden Moodle submit button and click it
-          var submitBtn = qBox.querySelector(".imcontrols input[type='submit'], .imcontrols button[type='submit']");
+          var submitBtn = qBox.querySelector(".imcontrols input[type='submit'], .imcontrols button[type='submit'], .im-controls input[type='submit'], .im-controls button[type='submit']");
           if (submitBtn) submitBtn.click();
         }
       }
