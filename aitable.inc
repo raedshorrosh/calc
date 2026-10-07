@@ -237,7 +237,7 @@ Promise.all(promises).then(([idForAns2, idForAns3]) => {
         MathJax.Hub.Queue(['Typeset', MathJax.Hub, aiOutput]);
       }
 
-      // --- DYNAMICALLY INSERT "ציון" (GRADE) COLUMN USING YOUR DESTROY/RECREATE METHOD ---
+      // --- DYNAMICALLY INSERT "ציון" (GRADE) COLUMN BY UPDATING DATA ARRAY ---
       if (rowMarks.length > 0) {
         let originalCols = {#Titles#}.length;
         let headersStr = table.getHeaders();
@@ -246,13 +246,21 @@ Promise.all(promises).then(([idForAns2, idForAns3]) => {
         // Only insert if we haven't already inserted the grade column
         if (currentColCount === originalCols) {
           
-          // 1. Get current settings
           let settings = table.getConfig();
           
-          // 2. Add the new column to the settings
+          // 1. Get current clean data and append the new AI grades directly to each row
+          let currentData = table.getData();
+          for (let i = 0; i < currentData.length; i++) {
+            let mark = (rowMarks[i] !== undefined && rowMarks[i] !== null) ? String(rowMarks[i]) : '';
+            currentData[i].push(mark);
+          }
+          // Force the table settings to use our updated data array
+          settings.data = currentData; 
+          
+          // 2. Add the new column definition
           settings.columns.push({ type: 'text', readOnly: true, stripHTML: false });
           settings.colHeaders.push('ציון');
-          settings.colWidths.push(160); // Give it enough width for the text
+          settings.colWidths.push(160);
           
           // 3. Balance the nested headers so the table doesn't crash
           if (settings.nestedHeaders && settings.nestedHeaders.length > 0) {
@@ -261,20 +269,14 @@ Promise.all(promises).then(([idForAns2, idForAns3]) => {
             }
           }
           
-          // 4. Destroy and recreate the table (Your method)
+          // 4. Destroy and recreate the table with the data already baked in
           table.destroy();
           table = jspreadsheet(document.getElementById(uid_table), settings);
           
-          // 5. Populate the grades using cell coordinates
-          for (let i = 0; i < rowMarks.length; i++) {
-            if (rowMarks[i] !== undefined && rowMarks[i] !== null && String(rowMarks[i]).trim() !== '') {
-              // Calculate the cell identifier (e.g., "E1", "F2")
+          // 5. Apply visual styling to the new column
+          for (let i = 0; i < currentData.length; i++) {
+            if (currentData[i][originalCols] !== '') {
               let cellIdent = jspreadsheet.getColumnName(originalCols) + (i + 1);
-              
-              // Set the value (false prevents triggering onchange loops)
-              table.setValue(cellIdent, String(rowMarks[i]), false); 
-              
-              // Highlight the AI text visually
               let cell = table.getCell(cellIdent);
               if (cell) {
                 cell.style.backgroundColor = '#f8fafc';
