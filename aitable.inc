@@ -213,7 +213,7 @@ Promise.all(promises).then(([idForAns2, idForAns3]) => {
         try { savedReply = JSON.parse(savedReply); } catch(e) { savedReply = savedReply.slice(1, -1); }
       }
 
-    // --- EXTRACT JSON ROW MARKS ---
+  // --- EXTRACT JSON ROW MARKS ---
       let rowMarks = [];
       let parts = savedReply.split('@@@ROW_MARKS@@@');
       if (parts.length > 1) {
@@ -237,35 +237,55 @@ Promise.all(promises).then(([idForAns2, idForAns3]) => {
         MathJax.Hub.Queue(['Typeset', MathJax.Hub, aiOutput]);
       }
 
-      // --- DYNAMICALLY INSERT "ציון" (GRADE) COLUMN INTO THE TABLE ---
+      // --- DYNAMICALLY INSERT "ציון" (GRADE) COLUMN USING YOUR DESTROY/RECREATE METHOD ---
       if (rowMarks.length > 0) {
         let originalCols = {#Titles#}.length;
-        
-        // Count how many columns currently exist in the table
         let headersStr = table.getHeaders();
         let currentColCount = headersStr ? headersStr.split(',').length : originalCols;
         
         // Only insert if we haven't already inserted the grade column
         if (currentColCount === originalCols) {
           
-          // Insert 1 column at the end of the table
-          table.insertColumn(1, originalCols, false, { type: 'text', title: 'ציון', readOnly: true, width: 120 });
+          // 1. Get current settings
+          let settings = table.getConfig();
           
-          // Populate the grades for each row
+          // 2. Add the new column to the settings
+          settings.columns.push({ type: 'text', readOnly: true, stripHTML: false });
+          settings.colHeaders.push('ציון');
+          settings.colWidths.push(160); // Give it enough width for the text
+          
+          // 3. Balance the nested headers so the table doesn't crash
+          if (settings.nestedHeaders && settings.nestedHeaders.length > 0) {
+            for (let i = 0; i < settings.nestedHeaders.length; i++) {
+              settings.nestedHeaders[i].push({ title: 'משוב AI', colspan: 1 });
+            }
+          }
+          
+          // 4. Destroy and recreate the table (Your method)
+          table.destroy();
+          table = jspreadsheet(document.getElementById(uid_table), settings);
+          
+          // 5. Populate the grades using cell coordinates
           for (let i = 0; i < rowMarks.length; i++) {
-            if (rowMarks[i] !== undefined && rowMarks[i] !== null) {
-              // true forces bypass of the readonly restriction
-              table.setValueFromCoords(originalCols, i, String(rowMarks[i]), true); 
+            if (rowMarks[i] !== undefined && rowMarks[i] !== null && String(rowMarks[i]).trim() !== '') {
+              // Calculate the cell identifier (e.g., "E1", "F2")
+              let cellIdent = jspreadsheet.getColumnName(originalCols) + (i + 1);
               
-              // Highlight the teacher mark cell visually
-              let cell = table.getCellFromCoords(originalCols, i);
+              // Set the value (false prevents triggering onchange loops)
+              table.setValue(cellIdent, String(rowMarks[i]), false); 
+              
+              // Highlight the AI text visually
+              let cell = table.getCell(cellIdent);
               if (cell) {
-                cell.style.backgroundColor = '#e2e8f0'; // Light gray background
+                cell.style.backgroundColor = '#f8fafc';
                 cell.style.fontWeight = 'bold';
-                cell.style.color = '#0f172a';
+                cell.style.color = '#334155';
               }
             }
           }
+          
+          // Trigger MathJax for any formulas inside the new column
+          MathJax.Hub.Queue(['Typeset', MathJax.Hub]);
         }
       }
       return; // Stop execution
