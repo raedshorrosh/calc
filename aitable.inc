@@ -201,30 +201,59 @@ Promise.all(promises).then(([idForAns2, idForAns3]) => {
     const customSubmitBtn = document.getElementById('aiSubmitBtn');
     const backupCacheKey = 'ai_eval_backup_' + uid_table;
 
-    // 1. If question is submitted (readonly), display the saved AI text
+   // 1. If question is already submitted (readonly), display the saved AI HTML and insert Grade column
     if (isInputReadOnly) {
       let savedReply = (aiInput && aiInput.value) ? aiInput.value : '';
       
-      // If STACK dropped the save (due to speed or CAS validation), use our local backup
       if (!savedReply || savedReply.trim() === '') {
         savedReply = localStorage.getItem(backupCacheKey) || '';
       }
 
-      // STACK String inputs automatically add double quotes around text. Clean them up:
       if (savedReply.startsWith('"') && savedReply.endsWith('"')) {
-        try { 
-          savedReply = JSON.parse(savedReply); 
-        } catch(e) { 
-          savedReply = savedReply.slice(1, -1); 
-        }
+        try { savedReply = JSON.parse(savedReply); } catch(e) { savedReply = savedReply.slice(1, -1); }
       }
 
+      // --- EXTRACT JSON ROW MARKS ---
+      let rowMarks = [];
+      let parts = savedReply.split('<!--ROW_MARKS_JSON-->');
+      if (parts.length > 1) {
+        savedReply = parts[0]; // Keep only the HTML for the bottom summary
+        try { rowMarks = JSON.parse(parts[1].trim()); } catch(e) { console.warn("Could not parse row marks JSON", e); }
+      }
+
+      // --- DISPLAY HTML SUMMARY ---
       if (savedReply && savedReply.trim() !== '') {
-        aiOutput.style.cssText = 'display: block; margin-top: 10px; max-height: 500px; overflow-y: auto; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; background: #f8fafc; white-space: pre-wrap; font-size: 15px; font-family: Arial, sans-serif; text-align: right;';
+        aiOutput.style.cssText = 'display: block; margin-top: 10px; max-height: 180px; overflow-y: auto; padding: 10px; border: 1px solid #cbd5e1; border-radius: 6px; background: #f8fafc; font-size: 15px; font-family: Arial, sans-serif; text-align: right;';
         aiOutput.innerHTML = savedReply;
         MathJax.Hub.Queue(['Typeset', MathJax.Hub, aiOutput]);
       }
-      return; // Do not show the submit button, stop execution
+
+      // --- DYNAMICALLY INSERT "ציון" (GRADE) COLUMN INTO THE TABLE ---
+      if (rowMarks.length > 0) {
+        let headers = table.getHeaders().split(',');
+        if (headers.indexOf('ציון') === -1) {
+          let originalCols = {#Titles#}.length;
+          
+          // Insert 1 column at the end of the table
+          table.insertColumn(1, originalCols, false, { type: 'text', title: 'ציון', readOnly: true, width: 120 });
+          
+          // Populate the grades for each row
+          for (let i = 0; i < rowMarks.length; i++) {
+            if (rowMarks[i]) {
+              table.setValueFromCoords(originalCols, i, rowMarks[i], true); // true forces bypass readonly
+              
+              // Highlight the teacher mark cell visually
+              let cell = table.getCellFromCoords(originalCols, i);
+              if (cell) {
+                cell.style.backgroundColor = '#e2e8f0'; // Light gray background
+                cell.style.fontWeight = 'bold';
+                cell.style.color = '#0f172a';
+              }
+            }
+          }
+        }
+      }
+      return; // Stop execution
     }
 
     // 2. If editing, show our custom submit button
