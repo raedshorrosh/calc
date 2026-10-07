@@ -1,4 +1,4 @@
-<!-- Bridge outside [[iframe]]: Bypasses TinyMCE, hides Moodle Submit, and listens for Custom Submit -->
+<!--*Bridge outside [[iframe]]: Bypasses TinyMCE, hides Moodle Submit, and listens for Custom Submit -->
 <span id="hintBridge_{#rqm#}" style="display:none;"></span>
 <div id="qtext{#rqm#}" style="display:none;"></div>
 <span id="roBridge_{#rqm#}" style="display:none;"></span>
