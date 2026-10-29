@@ -107,6 +107,33 @@ const nst = {#nested#};
       for (let i = 1; i < nested2.length; i++) { if (nested2[i].colspan) {  nested2[i].colspan *= 2};  }
          };
 
+// Add Excel-style column letters above the existing column titles.
+// These are presentation headers only, not spreadsheet data.
+function createLetterHeaders(count) {
+    var headers = [];
+    for (var i = 0; i < count; i++) {
+        headers.push({
+            title: jspreadsheet.getColumnName(i),
+            colspan: 1
+        });
+    }
+    return headers;
+}
+
+var originalColumnCount = {#Titles#}.length;
+var gradingColumnCount = originalColumnCount <= 3
+    ? originalColumnCount
+    : 3 + 2 * (originalColumnCount - 3);
+
+// JSpreadsheet requires nestedHeaders as an array of header rows.
+// Preserve either an existing single header row or multiple header rows.
+nested = [createLetterHeaders(originalColumnCount)].concat(
+    nested.length ? (Array.isArray(nested[0]) ? nested : [nested]) : []
+);
+nested2 = [createLetterHeaders(gradingColumnCount)].concat(
+    nested2.length ? (Array.isArray(nested2[0]) ? nested2 : [nested2]) : []
+);
+
 // Iterate through each row in the data
 for (let rowIndex = 0; rowIndex < data.length; rowIndex++) {
   const rowData = data[rowIndex];
