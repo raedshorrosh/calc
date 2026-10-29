@@ -6,16 +6,7 @@
 [[style href="https://fonts.googleapis.com/css?family=Material+Icons" type="text/css" /]]
 [[script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.7/MathJax.js?config=TeX-MML-AM_HTMLorMML" /]]
 
- <p style="display:none">`x^2`,`x/y`, \(\small C_6H_{12}O_{6(s)}\)</p>
- <div id="designToolbarContainer" style="display:none; direction:ltr; text-align:center; margin-bottom:8px; font-family:Arial, sans-serif; font-size:13px;">
-   <button type="button" id="btnCopyCombined" style="padding:4px 10px; margin-right:6px; cursor:pointer; background:#e8f5e9; border:1px solid #4caf50; border-radius:4px;">
-     📋 Copy Combined <b>hintdata</b> (Data + Colors)
-   </button>
-   <button type="button" id="btnCopySeparate" style="padding:4px 10px; cursor:pointer; background:#e3f2fd; border:1px solid #2196f3; border-radius:4px;">
-     📋 Copy Separate <b>hintdata</b> &amp; <b>tableStyle</b>
-   </button>
-   <span id="copyStatusMsg" style="margin-left:8px; color:green; font-weight:bold; display:none;">Copied!</span>
- </div>
+ <p style=display:none>`x^2`,`x/y`, \(\small C_6H_{12}O_{6(s)}\)</p>
   <div style="display: flex; justify-content: center; width:100%; font-size:{@fontsize@}">
    <div id="spreadsheet" dir="ltr" >
     <div id="myView" style="display:none;" ></div>
@@ -56,9 +47,9 @@ Promise.all(promises).then(([idForAns2, idForAns3]) => {
 
 var rqm={#rqm#};
 var last=false;
-var uid_table="table{#rqm#}";
-var uid_hint="hint{#rqm#}";
-var uid_feedback="feedback{#rqm#}";
+var uid_table="table{#rqm#}"
+var uid_hint="hint{#rqm#}"
+var uid_feedback="feedback{#rqm#}"
 var tmp=document.getElementById("spreadsheet"); tmp.setAttribute("id",uid_table);
      tmp= document.getElementById("myView"); tmp.setAttribute("id",uid_hint);
 
@@ -73,44 +64,46 @@ var teacherTable = jspreadsheet(container, {
   data: ({#data#})
 });
 
-// --- Backward-compatible loading of hintdata & styles ---
-var rawHintData = {#hintdata#};
-var data;
+var data={#hintdata#};
 var initialStyle = {};
 
-// 1. Check if hintdata is an object {data: [...], style: {...}} or a classic 2D array [...]
-if (rawHintData && !Array.isArray(rawHintData) && rawHintData.data) {
-    data = rawHintData.data;
-    if (rawHintData.style) {
-        initialStyle = Object.assign({}, rawHintData.style);
+// Helper: Extract "__STYLE__" row if present at the end of a data array
+function extractDataAndStyle(rawArray) {
+    var cleanData = [];
+    var extractedStyle = {};
+    if (Array.isArray(rawArray)) {
+        for (var i = 0; i < rawArray.length; i++) {
+            var row = rawArray[i];
+            if (Array.isArray(row) && row[0] === "__STYLE__" && typeof row[1] === "string") {
+                try {
+                    extractedStyle = JSON.parse(row[1].replace(/'/g, '"'));
+                } catch (e) {
+                    console.warn("Could not parse style row:", e);
+                }
+            } else {
+                cleanData.push(row);
+            }
+        }
     }
-} else {
-    data = rawHintData;
+    return { data: cleanData, style: extractedStyle };
 }
 
-// 2. Also support an optional separate Maxima variable: tableStyle
-var tableStyle; // Prevents ReferenceError in old questions where tableStyle is not defined in Maxima
-const tblStl = {#tableStyle#};
-if (tblStl !== undefined && tblStl !== null && tblStl !== '') {
-    try {
-        var parsedStyle = (typeof tblStl === 'string') ? JSON.parse(tblStl.replace(/'/g, '"')) : tblStl;
-        initialStyle = Object.assign(initialStyle, parsedStyle);
-    } catch (e) {
-        console.warn("Could not parse tableStyle:", e);
-    }
-}
+// 1. Extract data and style from Maxima's {#hintdata#}
+var parsedHint = extractDataAndStyle(data);
+data = parsedHint.data;
+initialStyle = parsedHint.style;
 
 var cellsToGrade = [];
 
-var merged; // Prevents ReferenceError if merged is not defined in Maxima
+var merged;
 const mrgd={#merged#};
  if (mrgd === undefined) {
-      merged = {};
+      merged = {}
     } else {
-      merged = JSON.parse(mrgd.replace(/'/g, '"'));
+      merged = JSON.parse(mrgd.replace(/'/g, '"'))
     };
 
-var nested, nested2, nested3;
+var nested, nested2,nested3;
 const nst = {#nested#};
     if (nst === undefined) {
       nested = [];
@@ -143,54 +136,67 @@ for (let rowIndex = 0; rowIndex < data.length; rowIndex++) {
   }
 };
 
-// Helper to get clean non-empty style map from table
+// Helper: Read styles directly from the table DOM cells so jexcel never loses them
 function getCleanStyle(jspInstance) {
-    if (!jspInstance || typeof jspInstance.getStyle !== 'function') return {};
-    var rawStyle = jspInstance.getStyle() || {};
+    if (!jspInstance) return initialStyle;
     var clean = {};
-    for (var key in rawStyle) {
-        if (rawStyle[key] && rawStyle[key].trim() !== '') {
-            clean[key] = rawStyle[key];
+    try {
+        var rawStyle = jspInstance.getStyle() || {};
+        for (var key in rawStyle) {
+            if (rawStyle[key] && rawStyle[key].trim() !== '') {
+                clean[key] = rawStyle[key];
+            }
         }
-    }
+    } catch (e) {}
     return clean;
 }
 
-// Helper to serialize current table data & style into ans2 (dataInput)
-function serializeTableState(jspInstance) {
-    var currentData = jspInstance ? jspInstance.getData() : data;
+// Helper: Pack table data + style into a 100% Maxima-compatible 2D list for ans2
+function serializeForMaxima(jspInstance) {
+    var currentData = jspInstance ? jspInstance.getData() : data.slice();
     var currentStyle = jspInstance ? getCleanStyle(jspInstance) : initialStyle;
-    // If there are styles, save {data, style}; otherwise save plain array for 100% classic compatibility
+    var out = currentData.slice();
     if (currentStyle && Object.keys(currentStyle).length > 0) {
-        return JSON.stringify({ data: currentData, style: currentStyle });
-    } else {
-        return JSON.stringify(currentData);
+        // Use single quotes inside the JSON string so Maxima accepts it inside "..." without escaping issues
+        var styleStr = JSON.stringify(currentStyle).replace(/"/g, "'");
+        out.push(["__STYLE__", styleStr]);
+    }
+    return JSON.stringify(out);
+}
+
+// Helper: Apply a style map {"D1": "background-color: #...", ...} to the jspreadsheet instance
+function applyStylesToTable(jspInstance, styleMap) {
+    if (!jspInstance || !styleMap || Object.keys(styleMap).length === 0) return;
+    try {
+        jspInstance.setStyle(styleMap);
+    } catch (e) {
+        // Fallback: apply inline style directly to each cell element
+        for (var cellName in styleMap) {
+            try {
+                var cellEl = jspInstance.getCell(cellName);
+                if (cellEl) {
+                    cellEl.style.cssText += ';' + styleMap[cellName];
+                }
+            } catch (err) {}
+        }
     }
 }
 
-// Restore from ans2 (dataInput) if student/teacher already has saved state
+// 2. Restore from ans2 (dataInput) if student/teacher already has saved state
 dataInput.dispatchEvent(new Event('change'));
 if (dataInput.value !== '') {
     try {
-        var parsedInput = JSON.parse(dataInput.value);
-        if (parsedInput && !Array.isArray(parsedInput) && parsedInput.data) {
-            data = parsedInput.data;
-            if (parsedInput.style) {
-                initialStyle = Object.assign(initialStyle, parsedInput.style);
-            }
-        } else if (Array.isArray(parsedInput)) {
-            data = parsedInput;
+        var parsedInput = extractDataAndStyle(JSON.parse(dataInput.value));
+        data = parsedInput.data;
+        if (Object.keys(parsedInput.style).length > 0) {
+            initialStyle = parsedInput.style;
         }
         dataInput.dispatchEvent(new Event('change'));
     } catch (e) {
-        console.warn("Error parsing dataInput:", e);
+        console.warn("Could not parse dataInput:", e);
     }
 } else {
-    if (Object.keys(initialStyle).length > 0) {
-        dataInput.value = JSON.stringify({ data: data, style: initialStyle });
-    } else {
-        dataInput.value = JSON.stringify(data);
-    }
+    dataInput.value = serializeForMaxima(null);
     dataInput.dispatchEvent(new Event('change'));
 }
   
@@ -260,7 +266,6 @@ var toolbar=[
 var observer;
 var table=jspreadsheet(document.getElementById(uid_table), {
   data:data,
-  style:initialStyle,
   wordWrap:true,
   colHeaders:{#Titles#},
   colWidths: widths,
@@ -285,69 +290,37 @@ nestedHeaders:nested,
    var isAttemptMode = window.location.href.indexOf('attempt.php') !== -1;
    if (isAttemptMode && readonly) cell.classList.add('readonly');                                    
    if (instance.jspreadsheet) {
-       dataInput.value = serializeTableState(instance.jspreadsheet);
+       dataInput.value = serializeForMaxima(instance.jspreadsheet);
        dataInput.dispatchEvent(new Event('change'));
    }
    MathJax.Hub.Queue(["Typeset", MathJax.Hub]);
-  },
-  onafterchanges: function (instance, records) {
-   if (instance.jspreadsheet) {
-       dataInput.value = serializeTableState(instance.jspreadsheet);
-       dataInput.dispatchEvent(new Event('change'));
-   }
-  },
+  },    
   columnSorting:false,
 });
  table.refresh();
 
-// Also hook into style changes triggered by the toolbar color pickers
-var originalSetStyle = table.setStyle;
-table.setStyle = function(o, k, v, force, ignoreHistoryAndEvents) {
-    var res = originalSetStyle.apply(this, arguments);
-    dataInput.value = serializeTableState(table);
-    dataInput.dispatchEvent(new Event('change'));
-    return res;
-};
+// Apply initial styles AFTER table.refresh() so jexcel does not wipe them out!
+applyStylesToTable(table, initialStyle);
+dataInput.value = serializeForMaxima(table);
+dataInput.dispatchEvent(new Event('change'));
 
+// Hook into table.setStyle so toolbar color changes immediately update ans2
+var origSetStyle = table.setStyle;
+table.setStyle = function() {
+    var result = origSetStyle.apply(this, arguments);
+    dataInput.value = serializeForMaxima(table);
+    dataInput.dispatchEvent(new Event('change'));
+    return result;
+};
+ 
 table.onafterchange = function (instance, cell, x, y, value) {
   if (readonly) {
     cell.classList.add('readonly');
   }
-  dataInput.value = serializeTableState(table);
+  dataInput.value = serializeForMaxima(table);
   dataInput.dispatchEvent(new Event('change'));
 };
-
-// Show helper copy buttons when in Design Mode (design == 1)
-if ({#design#} == 1) {
-    var designBar = document.getElementById('designToolbarContainer');
-    var statusMsg = document.getElementById('copyStatusMsg');
-    if (designBar) designBar.style.display = 'block';
-
-    function flashCopied() {
-        statusMsg.style.display = 'inline';
-        setTimeout(function() { statusMsg.style.display = 'none'; }, 2000);
-    }
-
-    document.getElementById('btnCopyCombined').addEventListener('click', function() {
-        var maximaStr = 'hintdata: ' + JSON.stringify(table.getData()) + ';\n';
-        var st = getCleanStyle(table);
-        if (Object.keys(st).length > 0) {
-            // Maxima-compatible string for tableStyle + hintdata
-            maximaStr += 'tableStyle: ' + JSON.stringify(JSON.stringify(st).replace(/"/g, "'")) + ';';
-        }
-        navigator.clipboard.writeText(maximaStr);
-        flashCopied();
-    });
-
-    document.getElementById('btnCopySeparate').addEventListener('click', function() {
-        var st = getCleanStyle(table);
-        var styleStr = JSON.stringify(st).replace(/"/g, "'");
-        var maximaStr = 'hintdata: ' + JSON.stringify(table.getData()) + ';\n' +
-                        'tableStyle: "' + styleStr + '";';
-        navigator.clipboard.writeText(maximaStr);
-        flashCopied();
-    });
-}
+   
  
 // Define a function to observe changes in the table container
 function observeTableChanges() {
@@ -407,8 +380,7 @@ cellsToGrade.forEach(({ row, col,theGrade }) => {
    const tt=[studentsGrade];
     gradeInput.value=JSON.stringify(tt);
     gradeInput.dispatchEvent(new Event('change'));
-    // Also keep data + style synced in ans2
-    dataInput.value = serializeTableState(table);
+    dataInput.value = serializeForMaxima(table);
     dataInput.dispatchEvent(new Event('change'));
 };
 
@@ -420,7 +392,6 @@ function shiftStylesForGrading(styleObj) {
         if (match) {
             var colLetters = match[1];
             var rowNum = match[2];
-            // Convert column letters to 0-based index
             var colIdx = 0;
             for (var i = 0; i < colLetters.length; i++) {
                 colIdx = colIdx * 26 + (colLetters.charCodeAt(i) - 64);
@@ -438,7 +409,6 @@ function shiftStylesForGrading(styleObj) {
                 
 var checkAnswer= function() {
  observer.disconnect();
- // Capture current styles before inserting columns
  var preCheckStyles = getCleanStyle(table);
  var shiftedStyles = shiftStylesForGrading(preCheckStyles);
 
@@ -462,7 +432,6 @@ for (let i = 0; i < columnLength-3; i++) {
 
 // Manipulate the nestedHeaders property in the settings
 settings.nestedHeaders = nested2;
-settings.style = shiftedStyles;
 
 // Destroy the table
 table.destroy();
@@ -503,6 +472,9 @@ cellsToGrade.forEach(({ row, col,theGrade }) => {
     table.insertRow();
     table.refresh();
     table.deleteRow();
+
+    // Re-apply the shifted styles after table recreation and refresh!
+    applyStylesToTable(table, shiftedStyles);
   };
 var answered=false;
 
