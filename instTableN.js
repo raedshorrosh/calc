@@ -1,31 +1,17 @@
 [[iframe]]
-[[script src="[https://raedshorrosh.github.io/jexcel.js](https://raedshorrosh.github.io/jexcel.js)"/]]
-[[script src="[https://raedshorrosh.github.io/jsuites.js](https://raedshorrosh.github.io/jsuites.js)"/]]
-[[style href="[https://raedshorrosh.github.io/jsuites.css](https://raedshorrosh.github.io/jsuites.css)" type="text/css" /]]
-[[style href="[https://raedshorrosh.github.io/jexcel.css](https://raedshorrosh.github.io/jexcel.css)" type="text/css" /]]
-[[style href="[https://fonts.googleapis.com/css?family=Material+Icons](https://fonts.googleapis.com/css?family=Material+Icons)" type="text/css" /]]
-[[script src="[https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.7/MathJax.js?config=TeX-MML-AM_HTMLorMML](https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.7/MathJax.js?config=TeX-MML-AM_HTMLorMML)" /]]
+[[script src="https://raedshorrosh.github.io/jexcel.js"/]]
+[[script src="https://raedshorrosh.github.io/jsuites.js"/]]
+[[style href="https://raedshorrosh.github.io/jsuites.css" type="text/css" /]]
+[[style href="https://raedshorrosh.github.io/jexcel.css" type="text/css" /]]
+[[style href="https://fonts.googleapis.com/css?family=Material+Icons" type="text/css" /]]
+[[script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.7/MathJax.js?config=TeX-MML-AM_HTMLorMML" /]]
 
  <p style=display:none>`x^2`,`x/y`, \(\small C_6H_{12}O_{6(s)}\)</p>
- <div id="styleExportBar" style="display:none; direction:ltr; text-align:center; margin-bottom:10px; padding:8px; background:#f8f9fa; border:1px solid #ced4da; border-radius:6px; font-family:Arial, sans-serif; font-size:13px;">
-   <div style="margin-bottom:6px;">
-     <button type="button" id="btnCopyData" style="padding:5px 12px; margin-right:6px; cursor:pointer; background:#e8f5e9; border:1px solid #4caf50; border-radius:4px; font-weight:bold;">
-       📋 Copy as data :[...];
-     </button>
-     <button type="button" id="btnCopyHintData" style="padding:5px 12px; margin-right:6px; cursor:pointer; background:#e3f2fd; border:1px solid #2196f3; border-radius:4px; font-weight:bold;">
-       📋 Copy as hintdata :[...];
-     </button>
-     <button type="button" id="btnCopyStyle" style="padding:5px 12px; margin-right:6px; cursor:pointer; background:#fff3e0; border:1px solid #ff9800; border-radius:4px; font-weight:bold;">
-       🎨 Copy tableStyle
-     </button>
-     <button type="button" id="btnCopyAll" style="padding:5px 12px; cursor:pointer; background:#f3e5f5; border:1px solid #9c27b0; border-radius:4px; font-weight:bold;">
-       ✨ Copy hintdata + tableStyle
-     </button>
-     <span id="copyStyleMsg" style="color:green; font-weight:bold; margin-left:8px; display:none;">✔ Copied!</span>
-   </div>
-   <div>
-     <textarea id="maximaCodePreview" readonly rows="4" style="width:95%; max-width:900px; font-family:monospace; font-size:12px; direction:ltr; text-align:left; padding:4px; border:1px solid #ccc; border-radius:4px;" placeholder="Formatted Maxima code will appear here..."></textarea>
-   </div>
+ <div id="styleExportBar" style="display:none; direction:ltr; text-align:center; margin-bottom:8px; font-family:Arial, sans-serif; font-size:14px;">
+   <label for="tableStyleOutput"><b>tableStyle for Maxima: </b></label>
+   <input type="text" id="tableStyleOutput" readonly style="width:450px; padding:3px 6px; font-family:monospace; direction:ltr;" />
+   <button type="button" id="btnCopyStyle" style="padding:3px 10px; margin-left:5px; cursor:pointer;">Copy tableStyle</button>
+   <span id="copyStyleMsg" style="color:green; font-weight:bold; margin-left:6px; display:none;">✔ Copied!</span>
  </div>
   <div style="display: flex; justify-content: center; width:100%; font-size:{@fontsize@}">
    <div id="spreadsheet" dir="ltr" >
@@ -175,33 +161,19 @@ function getCleanStyle(jspInstance) {
     return clean;
 }
 
-// Helper: Format a 2D array with each inner [...] on its own line
-function formatMaxima2DArray(varName, arr2D) {
-    if (!Array.isArray(arr2D)) return varName + " :[];";
-    var rows = arr2D.map(function(row) {
-        return JSON.stringify(row);
-    });
-    return varName + " :[" + rows.join(",\n") + "];";
-}
-
-// Helper: Update the Maxima preview box in Design Mode, and update ans2
+// Helper: Update the Maxima tableStyle box in Design Mode, and update ans2
 function syncOutputs(jspInstance) {
     var currentData = jspInstance ? jspInstance.getData() : data;
     var currentStyle = jspInstance ? getCleanStyle(jspInstance) : initialStyle;
     var styleStr = JSON.stringify(currentStyle).replace(/"/g, "'");
 
     if ({#design#} == 1) {
-        // Keep ans2 as the raw JSON array for backward compatibility
+        // In Design Mode: keep ans2 100% pure data (for data / hintdata), and put styles in the tableStyle box!
         dataInput.value = JSON.stringify(currentData);
         dataInput.dispatchEvent(new Event('change'));
-
-        var previewBox = document.getElementById('maximaCodePreview');
-        if (previewBox) {
-            var previewText = formatMaxima2DArray("hintdata", currentData);
-            if (currentStyle && Object.keys(currentStyle).length > 0) {
-                previewText += '\n\ntableStyle: "' + styleStr + '";';
-            }
-            previewBox.value = previewText;
+        var styleOut = document.getElementById('tableStyleOutput');
+        if (styleOut) {
+            styleOut.value = 'tableStyle: "' + styleStr + '";';
         }
     } else {
         // In Student Mode: preserve student style changes inside ans2 across reloads
@@ -350,49 +322,21 @@ nestedHeaders:nested,
 applyStylesToTable(table, initialStyle);
 syncOutputs(table);
 
-// Show the export toolbar and wire up the buttons when in Design Mode (design == 1)
+// Show the tableStyle export box when in Design Mode (design == 1)
 if ({#design#} == 1) {
     var styleBar = document.getElementById('styleExportBar');
     if (styleBar) styleBar.style.display = 'block';
-
-    function copyAndNotify(textToCopy) {
-        var previewBox = document.getElementById('maximaCodePreview');
-        if (previewBox) {
-            previewBox.value = textToCopy;
-            previewBox.select();
-        }
-        navigator.clipboard.writeText(textToCopy);
+    document.getElementById('btnCopyStyle').addEventListener('click', function() {
+        var outInput = document.getElementById('tableStyleOutput');
+        outInput.select();
+        navigator.clipboard.writeText(outInput.value);
         var msg = document.getElementById('copyStyleMsg');
         msg.style.display = 'inline';
         setTimeout(function() { msg.style.display = 'none'; }, 2000);
-    }
-
-    document.getElementById('btnCopyData').addEventListener('click', function() {
-        var formatted = formatMaxima2DArray("data", table.getData());
-        copyAndNotify(formatted);
-    });
-
-    document.getElementById('btnCopyHintData').addEventListener('click', function() {
-        var formatted = formatMaxima2DArray("hintdata", table.getData());
-        copyAndNotify(formatted);
-    });
-
-    document.getElementById('btnCopyStyle').addEventListener('click', function() {
-        var currentStyle = getCleanStyle(table);
-        var styleStr = JSON.stringify(currentStyle).replace(/"/g, "'");
-        var formatted = 'tableStyle: "' + styleStr + '";';
-        copyAndNotify(formatted);
-    });
-
-    document.getElementById('btnCopyAll').addEventListener('click', function() {
-        var currentStyle = getCleanStyle(table);
-        var styleStr = JSON.stringify(currentStyle).replace(/"/g, "'");
-        var formatted = formatMaxima2DArray("hintdata", table.getData()) + '\n\ntableStyle: "' + styleStr + '";';
-        copyAndNotify(formatted);
     });
 }
 
-// Hook into table.setStyle so toolbar color changes immediately update preview / ans2
+// Hook into table.setStyle so toolbar color changes immediately update tableStyleOutput / ans2
 var origSetStyle = table.setStyle;
 table.setStyle = function() {
     var result = origSetStyle.apply(this, arguments);
