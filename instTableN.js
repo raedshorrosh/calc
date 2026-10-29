@@ -456,6 +456,12 @@ function shiftStylesForGrading(styleObj) {
             var newColIdx = (colIdx >= 3) ? (2 * colIdx - 3) : colIdx;
             var newCellRef = jspreadsheet.getColumnName(newColIdx) + rowNum;
             shifted[newCellRef] = styleObj[cellRef];
+            // Feedback columns are inserted immediately to the right of
+            // original columns D, E, F, ... . Copy their formatting too.
+            if (colIdx >= 3) {
+                var feedbackCellRef = jspreadsheet.getColumnName(newColIdx + 1) + rowNum;
+                shifted[feedbackCellRef] = styleObj[cellRef];
+            }
         } else {
             shifted[cellRef] = styleObj[cellRef];
         }
