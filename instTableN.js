@@ -5,6 +5,7 @@
 [[style href="https://raedshorrosh.github.io/jexcel.css" type="text/css" /]]
 [[style href="https://fonts.googleapis.com/css?family=Material+Icons" type="text/css" /]]
 [[script src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.7/MathJax.js?config=TeX-MML-AM_HTMLorMML" /]]
+[[script src="https://cdnjs.cloudflare.com/ajax/libs/lz-string/1.4.5/lz-string.min.js" /]]
 
  <p style=display:none>`x^2`,`x/y`, \(\small C_6H_{12}O_{6(s)}\)</p>
  <div id="styleExportBar" style="display:none; direction:ltr; text-align:center; margin-bottom:8px; font-family:Arial, sans-serif; font-size:14px;">
@@ -92,13 +93,47 @@ function removeWidthMetadata(styleMap) {
         ? result : null;
 }
 
+// Compression is used ONLY for the exported/imported Maxima tableStyle.
+// Old plain tableStyle values remain valid, and ans2 stays uncompressed.
+var TABLE_STYLE_ENCODING_PREFIX = 'LZ1:';
+function encodeTableStyleForMaxima(rawStyle) {
+    if (typeof LZString === 'undefined' ||
+        typeof LZString.compressToEncodedURIComponent !== 'function') {
+        console.error('LZ-String did not load; exporting tableStyle uncompressed.');
+        return rawStyle;
+    }
+    var encoded = LZString.compressToEncodedURIComponent(rawStyle);
+    if (!encoded || LZString.decompressFromEncodedURIComponent(encoded) !== rawStyle) {
+        console.error('tableStyle compression verification failed; exporting uncompressed.');
+        return rawStyle;
+    }
+    return TABLE_STYLE_ENCODING_PREFIX + encoded;
+}
+
+function decodeTableStyleFromMaxima(value) {
+    if (typeof value !== 'string' || !value.startsWith(TABLE_STYLE_ENCODING_PREFIX)) {
+        return value; // Backward-compatible uncompressed tableStyle.
+    }
+    if (typeof LZString === 'undefined' ||
+        typeof LZString.decompressFromEncodedURIComponent !== 'function') {
+        throw new Error('Cannot load compressed tableStyle: LZ-String did not load.');
+    }
+    var decoded = LZString.decompressFromEncodedURIComponent(
+        value.slice(TABLE_STYLE_ENCODING_PREFIX.length)
+    );
+    if (!decoded) throw new Error('Compressed tableStyle is invalid or empty.');
+    return decoded;
+}
+
 // Load separate tableStyle variable from Maxima (backward-compatible if undefined in old questions)
 var tableStyle;
 const tblStl = {#tableStyle#};
 var initialStyle = {};
 if (tblStl !== undefined && tblStl !== null && tblStl !== '') {
     try {
-        initialStyle = (typeof tblStl === 'string') ? JSON.parse(tblStl.replace(/'/g, '"')) : tblStl;
+        initialStyle = (typeof tblStl === 'string')
+            ? JSON.parse(decodeTableStyleFromMaxima(tblStl).replace(/'/g, '"'))
+            : tblStl;
     } catch (e) {
         console.warn("Could not parse tableStyle:", e);
     }
@@ -291,7 +326,7 @@ function syncOutputs(jspInstance) {
         dataInput.dispatchEvent(new Event('change'));
         var styleOut = document.getElementById('tableStyleOutput');
         if (styleOut) {
-            styleOut.value = 'tableStyle: "' + styleStr + '";';
+            styleOut.value = 'tableStyle: "' + encodeTableStyleForMaxima(styleStr) + '";';
         }
     } else {
         // In Student Mode: preserve student style changes inside ans2 across reloads
