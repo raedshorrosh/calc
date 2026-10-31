@@ -72,6 +72,26 @@ var teacherTable = jspreadsheet(container, {
 
 var data={#hintdata#};
 
+// Special metadata in the existing Maxima tableStyle variable.
+// A width belongs to a whole column (not to an individual cell).
+var COLUMN_WIDTH_KEY = '__COLWIDTHS__';
+var initialColumnWidths = null;
+var widthSyncEnabled = false;
+var suppressPersistence = false;
+
+// Extract widths before giving the remaining style map to jspreadsheet.setStyle().
+function removeWidthMetadata(styleMap) {
+    if (!styleMap || !Object.prototype.hasOwnProperty.call(styleMap, COLUMN_WIDTH_KEY)) {
+        return null;
+    }
+    var rawWidths = styleMap[COLUMN_WIDTH_KEY];
+    delete styleMap[COLUMN_WIDTH_KEY];
+    var values = Array.isArray(rawWidths) ? rawWidths : String(rawWidths).split(',');
+    var result = values.map(function(value) { return Math.round(Number(value)); });
+    return result.length && result.every(function(w) { return Number.isFinite(w) && w >= 30 && w <= 3000; })
+        ? result : null;
+}
+
 // Load separate tableStyle variable from Maxima (backward-compatible if undefined in old questions)
 var tableStyle;
 const tblStl = {#tableStyle#};
@@ -83,6 +103,7 @@ if (tblStl !== undefined && tblStl !== null && tblStl !== '') {
         console.warn("Could not parse tableStyle:", e);
     }
 }
+initialColumnWidths = removeWidthMetadata(initialStyle);
 
 var cellsToGrade = [];
 var unitCellsToGrade = [];
@@ -215,10 +236,53 @@ function getCleanStyle(jspInstance) {
     return clean;
 }
 
+// Read current widths (px); this works with the JSpreadsheet CE getWidth API.
+function readColumnWidths(jspInstance, count) {
+    var result = [];
+    for (var i = 0; i < count; i++) {
+        var w = NaN;
+        if (jspInstance && typeof jspInstance.getWidth === 'function') {
+            try { w = parseFloat(jspInstance.getWidth(i)); } catch (e) {}
+        }
+        if (!Number.isFinite(w) && jspInstance && jspInstance.options) {
+            var col = jspInstance.options.columns && jspInstance.options.columns[i];
+            w = parseFloat(col && col.width);
+            if (!Number.isFinite(w)) {
+                w = parseFloat(jspInstance.options.colWidths && jspInstance.options.colWidths[i]);
+            }
+        }
+        if (!Number.isFinite(w)) w = (i < 3 ? [150, 100, 100][i] : 100);
+        result.push(Math.round(w));
+    }
+    return result;
+}
+
+// Restore widths through the actual column API, not CSS styles on cells.
+function applyColumnWidths(jspInstance, values) {
+    if (!jspInstance || !values || typeof jspInstance.setWidth !== 'function') return;
+    var enabledBefore = widthSyncEnabled;
+    widthSyncEnabled = false;
+    try {
+        for (var i = 0; i < values.length; i++) {
+            var w = Math.round(Number(values[i]));
+            if (Number.isFinite(w) && w >= 30 && w <= 3000) {
+                jspInstance.setWidth(i, w);
+            }
+        }
+    } finally {
+        widthSyncEnabled = enabledBefore;
+    }
+}
+
 // Helper: Update the Maxima tableStyle box in Design Mode, and update ans2
 function syncOutputs(jspInstance) {
+    if (suppressPersistence) return;
     var currentData = jspInstance ? jspInstance.getData() : data;
-    var currentStyle = jspInstance ? getCleanStyle(jspInstance) : initialStyle;
+    var currentStyle = jspInstance ? getCleanStyle(jspInstance) : Object.assign({}, initialStyle);
+    var columnWidths = jspInstance
+        ? readColumnWidths(jspInstance, originalColumnCount)
+        : (initialColumnWidths || makeDefaultWidths(originalColumnCount));
+    currentStyle[COLUMN_WIDTH_KEY] = columnWidths.join(',');
     var styleStr = JSON.stringify(currentStyle).replace(/"/g, "'");
 
     if ({#design#} == 1) {
@@ -265,6 +329,8 @@ if (dataInput.value !== '') {
         data = parsedInput.data;
         if (parsedInput.style !== null) {
             initialStyle = parsedInput.style;
+            var savedWidths = removeWidthMetadata(initialStyle);
+            if (savedWidths) initialColumnWidths = savedWidths;
         }
         dataInput.dispatchEvent(new Event('change'));
     } catch (e) {
@@ -274,8 +340,17 @@ if (dataInput.value !== '') {
     syncOutputs(null);
 }
   
-var widths=[150,100,100];
-for (let i=3;i<{#Titles#}.length;i++){widths[i]=100};
+function makeDefaultWidths(count) {
+    var w = [150, 100, 100];
+    for (var i=3; i<count; i++) w[i] = 100;
+    return w.slice(0, count);
+}
+var widths = makeDefaultWidths(originalColumnCount);
+if (initialColumnWidths) {
+    for (var i=0; i<Math.min(widths.length, initialColumnWidths.length); i++) {
+        widths[i] = initialColumnWidths[i];
+    }
+}
 var toolbar=[
         {
             type: 'i',
@@ -338,6 +413,7 @@ var toolbar=[
         },
     ];
 var observer;
+suppressPersistence = true;
 var table=jspreadsheet(document.getElementById(uid_table), {
   data:data,
   wordWrap:true,
@@ -360,6 +436,10 @@ nestedHeaders:nested,
  mergeCells:merged,
                  
   toolbar:toolbar,
+  // Persist a manual column resize in the same tableStyle Maxima variable.
+  onresizecolumn: function() {
+      if (widthSyncEnabled && !suppressPersistence && table) syncOutputs(table);
+  },
   updateTable: function (instance, cell, col, row, val, label, cellName) {
    var isAttemptMode = window.location.href.indexOf('attempt.php') !== -1;
    if (isAttemptMode && readonly) cell.classList.add('readonly');                                    
@@ -367,13 +447,45 @@ nestedHeaders:nested,
        syncOutputs(instance.jspreadsheet);
    }
    MathJax.Hub.Queue(["Typeset", MathJax.Hub]);
-  },    
+  },
+
+  // Prevent AsciiMath from appearing twice after opening and closing
+  // a cell without changing its value. The spreadsheet model retains
+  // the raw `...` expression; MathJax modifies only the displayed DOM.
+  oneditionend: function(instance, cell, x, y, value, save) {
+      setTimeout(function() {
+          if (!cell || !cell.isConnected || cell.isContentEditable) return;
+          var rows = table.getData();
+          var raw = rows && rows[y] ? rows[y][x] : null;
+
+          // Rebuild only cells containing a complete AsciiMath expression.
+          // Leave numeric cells, dropdowns, and mixed HTML untouched.
+          if (typeof raw !== 'string') return;
+          var expression = raw.trim();
+          if (expression.length < 2 ||
+              expression.charAt(0) !== '`' ||
+              expression.charAt(expression.length - 1) !== '`') return;
+
+          // Serialize DOM changes with earlier MathJax jobs.
+          MathJax.Hub.Queue(
+              function() {
+                  if (cell.isConnected && !cell.isContentEditable) {
+                      cell.textContent = raw;
+                  }
+              },
+              ["Typeset", MathJax.Hub, cell]
+          );
+      }, 0);
+  },
   columnSorting:false,
 });
  table.refresh();
 
-// Apply initial styles AFTER table.refresh() so jexcel does not wipe them out!
+// Apply initial styles AND widths after refresh so they survive reloads.
 applyStylesToTable(table, initialStyle);
+applyColumnWidths(table, widths);
+suppressPersistence = false;
+widthSyncEnabled = true;
 syncOutputs(table);
 
 // Show the tableStyle export box when in Design Mode (design == 1)
@@ -508,8 +620,17 @@ function shiftStylesForGrading(styleObj) {
                 
 var checkAnswer= function() {
  observer.disconnect();
+ // The answer review introduces extra feedback columns; do not persist
+ // this temporary review layout back into the student's input.
+ suppressPersistence = true;
+ widthSyncEnabled = false;
  var preCheckStyles = getCleanStyle(table);
  var shiftedStyles = shiftStylesForGrading(preCheckStyles);
+ var originalWidthsBeforeGrading = readColumnWidths(table, originalColumnCount);
+ var reviewWidths = originalWidthsBeforeGrading.slice(0, 3);
+ for (var wi=3; wi<originalColumnCount; wi++) {
+     reviewWidths.push(originalWidthsBeforeGrading[wi], 30);
+ }
 
 // Get the data as a nested array
  var mark;
@@ -531,6 +652,13 @@ for (let i = 0; i < columnLength-3; i++) {
 
 // Manipulate the nestedHeaders property in the settings
 settings.nestedHeaders = nested2;
+// Preserve original column widths; newly inserted grading columns stay narrow.
+settings.colWidths = reviewWidths.slice();
+if (Array.isArray(settings.columns)) {
+    for (var wj=0; wj<Math.min(settings.columns.length, reviewWidths.length); wj++) {
+        settings.columns[wj].width = reviewWidths[wj];
+    }
+}
 
 // Destroy the table
 table.destroy();
@@ -572,8 +700,9 @@ cellsToGrade.forEach(({ row, col,theGrade }) => {
     table.refresh();
     table.deleteRow();
 
-    // Re-apply the shifted styles after table recreation and refresh!
+    // Re-apply the shifted styles and column widths after recreation/refresh.
     applyStylesToTable(table, shiftedStyles);
+    applyColumnWidths(table, reviewWidths);
 
     // Show unit feedback inside column B, without inserting columns
     // or modifying its underlying dropdown value / saved ans2 data.
