@@ -36,8 +36,8 @@ MathJax.Hub.Config({
   }
 });
 
-// Trigger MathJax to process the page again
-MathJax.Hub.Queue(["Typeset", MathJax.Hub]);
+// MathJax rendering for the spreadsheet is managed per cell below.
+// Avoid repeatedly typesetting the entire page while a cell is being edited.
 
   import {stack_js} from '[[cors src="stackjsiframe.js"/]]';
  stack_js.resize_containing_frame({#width#}, {#height#}); 
@@ -412,6 +412,50 @@ var toolbar=[
             k: 'background-color'
         },
     ];
+// MathJax 2 + JSpreadsheet: render the display, never an active cell editor.
+// JSpreadsheet owns the raw cell value, while MathJax owns only its DOM display.
+var mathEditBackup = new WeakMap();
+var mathEditingCells = new WeakSet();
+var mathRenderVersion = new WeakMap();
+
+function hasAsciiMath(value) {
+    return typeof value === 'string' && /`[^`]+`/.test(value);
+}
+
+function invalidateMathRender(cell) {
+    if (!cell) return;
+    mathRenderVersion.set(cell, (mathRenderVersion.get(cell) || 0) + 1);
+}
+
+function queueCellMathRender(cell, rawValue, forceRebuild) {
+    if (!cell || !hasAsciiMath(rawValue)) return;
+    invalidateMathRender(cell);
+    var version = mathRenderVersion.get(cell);
+
+    MathJax.Hub.Queue(function() {
+        if (!cell.isConnected ||
+            mathEditingCells.has(cell) ||
+            mathRenderVersion.get(cell) !== version ||
+            cell.isContentEditable ||
+            cell.querySelector('[contenteditable="true"]')) return;
+
+        // Never feed an already-rendered MathJax DOM back to the editor.
+        // When closing an editor, discard any old display and start from raw text.
+        if (!forceRebuild &&
+            cell.querySelector('.MathJax, .MathJax_Preview, script[type^="math/"]')) return;
+
+        if (forceRebuild && typeof MathJax.Hub.getAllJax === 'function') {
+            var oldJax = MathJax.Hub.getAllJax(cell) || [];
+            for (var i = 0; i < oldJax.length; i++) {
+                try { oldJax[i].Remove(); } catch (e) {}
+            }
+        }
+        // textContent deliberately avoids importing MathJax's generated HTML.
+        cell.textContent = rawValue;
+        return MathJax.Hub.Typeset(cell);
+    });
+}
+
 var observer;
 suppressPersistence = true;
 var table=jspreadsheet(document.getElementById(uid_table), {
@@ -446,40 +490,70 @@ nestedHeaders:nested,
    if (instance.jspreadsheet) {
        syncOutputs(instance.jspreadsheet);
    }
-   MathJax.Hub.Queue(["Typeset", MathJax.Hub]);
+   // Only process the changed cell; never typeset the active editor or page.
+   var rawForRender = instance.jspreadsheet && instance.jspreadsheet.getData()
+       ? ((instance.jspreadsheet.getData()[row] || [])[col]) : val;
+   if (hasAsciiMath(rawForRender)) {
+       queueCellMathRender(cell, rawForRender, false);
+   }
   },
 
-  // Prevent AsciiMath from appearing twice after opening and closing
-  // a cell without changing its value. The spreadsheet model retains
-  // the raw `...` expression; MathJax modifies only the displayed DOM.
+  // Keep the raw source before editing. The MathJax display is not the value.
+  oneditionstart: function(instance, cell, x, y) {
+      var currentData = instance.jspreadsheet ? instance.jspreadsheet.getData() : table.getData();
+      var raw = currentData && currentData[y] ? currentData[y][x] : null;
+      if (hasAsciiMath(raw)) {
+          mathEditBackup.set(cell, raw);
+          mathEditingCells.add(cell);
+          invalidateMathRender(cell);
+      }
+  },
+
+  // If JSpreadsheet tries to save MathJax's generated HTML as a cell value,
+  // protect the original AsciiMath text instead.
+  onbeforechange: function(instance, cell, x, y, newValue) {
+      var original = mathEditBackup.get(cell);
+      if (hasAsciiMath(original) && typeof newValue === 'string' &&
+          /(?:class=[\"']?MathJax|math\/asciimath|MathJax_Preview)/.test(newValue)) {
+          return original;
+      }
+      return newValue;
+  },
+
+  // In both Enter and click-away cases, reconstruct the display once from
+  // JSpreadsheet's raw model value, then typeset that one cell only.
   oneditionend: function(instance, cell, x, y, value, save) {
+      var backup = mathEditBackup.get(cell);
+      if (!hasAsciiMath(backup)) return;
+      invalidateMathRender(cell);
+      mathEditingCells.delete(cell);
+      mathEditBackup.delete(cell);
+
       setTimeout(function() {
-          if (!cell || !cell.isConnected || cell.isContentEditable) return;
+          if (!cell || !cell.isConnected) return;
           var rows = table.getData();
-          var raw = rows && rows[y] ? rows[y][x] : null;
+          var current = rows && rows[y] ? rows[y][x] : null;
 
-          // Rebuild only cells containing a complete AsciiMath expression.
-          // Leave numeric cells, dropdowns, and mixed HTML untouched.
-          if (typeof raw !== 'string') return;
-          var expression = raw.trim();
-          if (expression.length < 2 ||
-              expression.charAt(0) !== '`' ||
-              expression.charAt(expression.length - 1) !== '`') return;
+          // Recover if the editor committed its rendered HTML rather than text.
+          if (typeof current === 'string' &&
+              /(?:class=[\"']?MathJax|math\/asciimath|MathJax_Preview)/.test(current)) {
+              var coord = jspreadsheet.getColumnName(x) + (y + 1);
+              table.setValue(coord, backup, false);
+              current = backup;
+          }
 
-          // Serialize DOM changes with earlier MathJax jobs.
-          MathJax.Hub.Queue(
-              function() {
-                  if (cell.isConnected && !cell.isContentEditable) {
-                      cell.textContent = raw;
-                  }
-              },
-              ["Typeset", MathJax.Hub, cell]
-          );
+          if (hasAsciiMath(current)) {
+              queueCellMathRender(cell, current, true);
+          }
       }, 0);
   },
   columnSorting:false,
 });
  table.refresh();
+
+// Initial table typesetting: once, after creation, before user editing.
+// Later updates use the per-cell function instead of this table-wide call.
+MathJax.Hub.Queue(["Typeset", MathJax.Hub, document.getElementById(uid_table)]);
 
 // Apply initial styles AND widths after refresh so they survive reloads.
 applyStylesToTable(table, initialStyle);
