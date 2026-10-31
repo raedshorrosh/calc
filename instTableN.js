@@ -85,6 +85,18 @@ if (tblStl !== undefined && tblStl !== null && tblStl !== '') {
 }
 
 var cellsToGrade = [];
+var unitCellsToGrade = [];
+
+// Unit grading: column B only. A plain "?" is worth 1 point;
+// "?,0.5" or "?,2" can be used for a different weight per unit cell.
+var defaultUnitGradeWeight = 1;
+function normalizeUnit(value) {
+    return value === null || value === undefined ? '' : String(value).trim();
+}
+function unitsMatch(studentValue, teacherValue) {
+    var expected = normalizeUnit(teacherValue);
+    return expected !== '' && normalizeUnit(studentValue) === expected;
+}
 
 var merged;
 const mrgd={#merged#};
@@ -134,25 +146,40 @@ nested2 = [createLetterHeaders(gradingColumnCount)].concat(
     nested2.length ? (Array.isArray(nested2[0]) ? nested2 : [nested2]) : []
 );
 
-// Iterate through each row in the data
+// Identify graded numeric cells and dropdown units.
+// Only cells marked "?" or "?,weight" in column B are graded as units.
+// The teacher's unit must be nonempty, so divider/header rows are skipped.
+var teacherInitialData = teacherTable.getData();
 for (let rowIndex = 0; rowIndex < data.length; rowIndex++) {
-  const rowData = data[rowIndex];
+    const rowData = data[rowIndex];
+    for (let colIndex = 0; colIndex < rowData.length; colIndex++) {
+        const rawCell = rowData[colIndex];
+        if (typeof rawCell !== 'string') continue;
 
-  // Iterate through each element in the row
-  for (let colIndex = 0; colIndex < rowData.length; colIndex++) {
-    // Check if the current element starts with "?,"
-    if (typeof rowData[colIndex] === 'string' && rowData[colIndex].startsWith("?,")) {
-      // Extract the grade value
-      const agrade = rowData[colIndex].substring(2);
+        if (colIndex === 1) {
+            var isUnitPlaceholder = rawCell === '?' || /^\?,\s*(?:\d+(?:\.\d+)?|\.\d+)\s*$/.test(rawCell);
+            var teacherUnit = teacherInitialData[rowIndex] && teacherInitialData[rowIndex][1];
+            if (isUnitPlaceholder && normalizeUnit(teacherUnit) !== '') {
+                var unitWeight = rawCell === '?' ? defaultUnitGradeWeight : Number(rawCell.substring(2));
+                if (Number.isFinite(unitWeight) && unitWeight > 0) {
+                    unitCellsToGrade.push({ row: rowIndex, theGrade: unitWeight });
+                }
+            }
+            if (rawCell.startsWith('?,') && {#design#} !== 1) {
+                data[rowIndex][colIndex] = '?';
+            }
+            continue; // Column B is never treated as a numeric cell.
+        }
 
-      // Replace the current element with "?"
-      if ({#design#}!==1) { data[rowIndex][colIndex] = "?"};
-
-      // Store the position and grade in the new array
-      cellsToGrade.push({ row: rowIndex, col: colIndex, theGrade: agrade });
+        if (rawCell.startsWith('?,')) {
+            const agrade = Number(rawCell.substring(2));
+            if ({#design#} !== 1) data[rowIndex][colIndex] = '?';
+            if (Number.isFinite(agrade) && agrade > 0) {
+                cellsToGrade.push({ row: rowIndex, col: colIndex, theGrade: agrade });
+            }
+        }
     }
-  }
-};
+}
 
 // Helper: Extract "__STYLE__" row if saved by student in ans2
 function extractStudentDataAndStyle(rawArray) {
@@ -433,7 +460,17 @@ cellsToGrade.forEach(({ row, col,theGrade }) => {
     if (mark){studentsGrade= studentsGrade+parseFloat(theGrade)};
     }
 });
-   studentsGrade= studentsGrade/totalGrades;
+
+// Give independent credit for correctly selected dropdown units in column B.
+unitCellsToGrade.forEach(({ row, theGrade }) => {
+    totalGrades += theGrade;
+    if (unitsMatch(studentData[row] && studentData[row][1],
+                   teacherData[row] && teacherData[row][1])) {
+        studentsGrade += theGrade;
+    }
+});
+
+   studentsGrade= totalGrades > 0 ? studentsGrade/totalGrades : 0;
    const tt=[studentsGrade];
     gradeInput.value=JSON.stringify(tt);
     gradeInput.dispatchEvent(new Event('change'));
@@ -537,6 +574,24 @@ cellsToGrade.forEach(({ row, col,theGrade }) => {
 
     // Re-apply the shifted styles after table recreation and refresh!
     applyStylesToTable(table, shiftedStyles);
+
+    // Show unit feedback inside column B, without inserting columns
+    // or modifying its underlying dropdown value / saved ans2 data.
+    unitCellsToGrade.forEach(({ row }) => {
+        var unitCell = table.getCell('B' + (row + 1));
+        if (!unitCell) return;
+        var isCorrect = unitsMatch(studentData[row] && studentData[row][1],
+                                   teacherData[row] && teacherData[row][1]);
+        var marker = document.createElement('span');
+        marker.textContent = isCorrect ? '✔' : '✖';
+        marker.setAttribute('aria-label', isCorrect ? 'Correct unit' : 'Incorrect unit');
+        marker.style.cssText = 'position:absolute;right:4px;top:50%;' +
+            'transform:translateY(-50%);font-weight:bold;color:' +
+            (isCorrect ? 'green' : 'red') + ';pointer-events:none;';
+        unitCell.style.position = 'relative';
+        unitCell.style.paddingRight = '20px';
+        unitCell.appendChild(marker);
+    });
   };
 var answered=false;
 
