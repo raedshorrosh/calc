@@ -62,6 +62,38 @@ var tmp=document.getElementById("spreadsheet"); tmp.setAttribute("id",uid_table)
 
 var readonly=false;
 
+// Visual grading marks live in the same cell, not in spreadsheet data.
+// CSS pseudo-elements keep the cell's numeric/text content, MathJax, styles,
+// and saved column widths untouched. Limit these rules to this question's table.
+var gradingStyleElement = document.createElement('style');
+gradingStyleElement.textContent =
+    '#' + uid_table + ' td.stack-grade-correct, ' +
+    '#' + uid_table + ' td.stack-grade-incorrect {' +
+        'position:relative !important;' +
+        'padding-right:20px !important;' +
+    '}' +
+    '#' + uid_table + ' td.stack-grade-correct::after, ' +
+    '#' + uid_table + ' td.stack-grade-incorrect::after {' +
+        'position:absolute;' +
+        'right:3px;' +
+        'top:50%;' +
+        'transform:translateY(-50%);' +
+        'font-size:13px;' +
+        'font-weight:bold;' +
+        'line-height:1;' +
+        'pointer-events:none;' +
+        'z-index:1;' +
+    '}' +
+    '#' + uid_table + ' td.stack-grade-correct::after {' +
+        'content:"✔";' +
+        'color:green;' +
+    '}' +
+    '#' + uid_table + ' td.stack-grade-incorrect::after {' +
+        'content:"✖";' +
+        'color:#c62828;' +
+    '}';
+document.head.appendChild(gradingStyleElement);
+
 var container = document.createElement('div');
 container.style.display='none';
 document.body.appendChild(container);
@@ -162,18 +194,13 @@ const mrgd={#merged#};
       merged = JSON.parse(mrgd.replace(/'/g, '"'))
     };
 
-var nested, nested2,nested3;
+var nested;
 const nst = {#nested#};
-    if (nst === undefined) {
-      nested = [];
-      nested2 = [];
-    } else {
-      nested = JSON.parse(nst.replace(/'/g, '"'));
-      nested2 = JSON.parse(nst.replace(/'/g, '"'));
-      nested3 = JSON.parse(nst.replace(/'/g, '"'));
-      // Double the colspan values, excluding the first object
-      for (let i = 1; i < nested2.length; i++) { if (nested2[i].colspan) {  nested2[i].colspan *= 2};  }
-         };
+if (nst === undefined || nst === null || nst === '') {
+    nested = [];
+} else {
+    nested = JSON.parse(nst.replace(/'/g, '"'));
+}
 
 // Add Excel-style column letters above the existing column titles.
 // These are presentation headers only, not spreadsheet data.
@@ -189,17 +216,11 @@ function createLetterHeaders(count) {
 }
 
 var originalColumnCount = {#Titles#}.length;
-var gradingColumnCount = originalColumnCount <= 3
-    ? originalColumnCount
-    : 3 + 2 * (originalColumnCount - 3);
 
 // JSpreadsheet requires nestedHeaders as an array of header rows.
 // Preserve either an existing single header row or multiple header rows.
 nested = [createLetterHeaders(originalColumnCount)].concat(
     nested.length ? (Array.isArray(nested[0]) ? nested : [nested]) : []
-);
-nested2 = [createLetterHeaders(gradingColumnCount)].concat(
-    nested2.length ? (Array.isArray(nested2[0]) ? nested2 : [nested2]) : []
 );
 
 // Identify graded numeric cells and dropdown units.
@@ -654,183 +675,116 @@ function observeTableChanges() {
 // Call the function to start observing changes
 observeTableChanges();
                   
-var prepareGrade=function(){
- var mark;
- var studentsGrade=0, totalGrades=0; 
- const studentData = table.getData();
- const teacherData = teacherTable.getData();
-cellsToGrade.forEach(({ row, col,theGrade }) => {
-    totalGrades=totalGrades+parseFloat(theGrade);
-    const studentCellIdent = jspreadsheet.getColumnName(col) + (row+1);
-    const studentCell = table.getCell(studentCellIdent);
-    const studentValue = studentCell ? studentCell.innerHTML.trim() : '';
+// Use the same numeric comparison for score calculations and review markers.
+// The rendered cell text is used intentionally: JSpreadsheet evaluates formulas
+// for display while getData() can contain unevaluated formula strings.
+function numericCellIsCorrect(row, col, studentValue, teacherValue) {
+    if (studentValue === '' && teacherValue === '') return false;
 
-    const teacherCellIdent = jspreadsheet.getColumnName(col) + (row+1); // No adjustment needed here
-    const teacherCell = teacherTable.getCell(teacherCellIdent);
-    const teacherValue = teacherCell ? teacherCell.innerHTML.trim() : '';
+    var studentNumber = parseFloat(studentValue);
+    var teacherNumber = parseFloat(teacherValue);
 
-    // Check if either student or teacher cells are not empty
-   if (studentValue !== '' || teacherValue !== '') {
-   if (studentValue == 0 && teacherValue == 0) {mark=true}
-  else {
-  const absoluteDifference = Math.abs(parseFloat(studentValue) - parseFloat(teacherValue));
-  const ratio = absoluteDifference / Math.abs(parseFloat(teacherValue));
-  mark = ratio <= {#relativeErr#} ? true: false;
+    if (studentNumber === 0 && teacherNumber === 0) return true;
+    if (!Number.isFinite(studentNumber) || !Number.isFinite(teacherNumber)) return false;
+
+    var relativeDifference = Math.abs(studentNumber - teacherNumber) /
+                             Math.abs(teacherNumber);
+    return relativeDifference <= {#relativeErr#};
 }
 
-    if (mark){studentsGrade= studentsGrade+parseFloat(theGrade)};
-    }
-});
+function getNumericCellComparison(row, col) {
+    var ref = jspreadsheet.getColumnName(col) + (row + 1);
+    var studentCell = table.getCell(ref);
+    var teacherCell = teacherTable.getCell(ref);
+    return {
+        studentCell: studentCell,
+        studentValue: studentCell ? studentCell.innerHTML.trim() : '',
+        teacherValue: teacherCell ? teacherCell.innerHTML.trim() : ''
+    };
+}
 
-// Give independent credit for correctly selected dropdown units in column B.
-unitCellsToGrade.forEach(({ row, theGrade }) => {
-    totalGrades += theGrade;
-    if (unitsMatch(studentData[row] && studentData[row][1],
-                   teacherData[row] && teacherData[row][1])) {
-        studentsGrade += theGrade;
-    }
-});
+var prepareGrade = function() {
+    if (readonly) return;
+    var studentsGrade = 0, totalGrades = 0;
+    var studentData = table.getData();
+    var teacherData = teacherTable.getData();
 
-   studentsGrade= totalGrades > 0 ? studentsGrade/totalGrades : 0;
-   const tt=[studentsGrade];
-    gradeInput.value=JSON.stringify(tt);
+    cellsToGrade.forEach(({ row, col, theGrade }) => {
+        totalGrades += theGrade;
+        var result = getNumericCellComparison(row, col);
+        if (numericCellIsCorrect(row, col, result.studentValue, result.teacherValue)) {
+            studentsGrade += theGrade;
+        }
+    });
+
+    // Dropdown units in column B retain their current independent weights.
+    unitCellsToGrade.forEach(({ row, theGrade }) => {
+        totalGrades += theGrade;
+        if (unitsMatch(studentData[row] && studentData[row][1],
+                       teacherData[row] && teacherData[row][1])) {
+            studentsGrade += theGrade;
+        }
+    });
+
+    var finalScore = totalGrades > 0 ? studentsGrade / totalGrades : 0;
+    gradeInput.value = JSON.stringify([finalScore]);
     gradeInput.dispatchEvent(new Event('change'));
     syncOutputs(table);
 };
 
-// Helper to shift style coordinates when grading columns are inserted after col >= 3
-function shiftStylesForGrading(styleObj) {
-    var shifted = {};
-    for (var cellRef in styleObj) {
-        var match = cellRef.match(/^([A-Z]+)(\d+)$/);
-        if (match) {
-            var colLetters = match[1];
-            var rowNum = match[2];
-            var colIdx = 0;
-            for (var i = 0; i < colLetters.length; i++) {
-                colIdx = colIdx * 26 + (colLetters.charCodeAt(i) - 64);
-            }
-            colIdx -= 1;
-            var newColIdx = (colIdx >= 3) ? (2 * colIdx - 3) : colIdx;
-            var newCellRef = jspreadsheet.getColumnName(newColIdx) + rowNum;
-            shifted[newCellRef] = styleObj[cellRef];
-            // Feedback columns are inserted immediately to the right of
-            // original columns D, E, F, ... . Copy their formatting too.
-            if (colIdx >= 3) {
-                var feedbackCellRef = jspreadsheet.getColumnName(newColIdx + 1) + rowNum;
-                shifted[feedbackCellRef] = styleObj[cellRef];
-            }
-        } else {
-            shifted[cellRef] = styleObj[cellRef];
-        }
-    }
-    return shifted;
-}
-                
-var checkAnswer= function() {
- observer.disconnect();
- // The answer review introduces extra feedback columns; do not persist
- // this temporary review layout back into the student's input.
- suppressPersistence = true;
- widthSyncEnabled = false;
- var preCheckStyles = getCleanStyle(table);
- var shiftedStyles = shiftStylesForGrading(preCheckStyles);
- var originalWidthsBeforeGrading = readColumnWidths(table, originalColumnCount);
- var reviewWidths = originalWidthsBeforeGrading.slice(0, 3);
- for (var wi=3; wi<originalColumnCount; wi++) {
-     reviewWidths.push(originalWidthsBeforeGrading[wi], 30);
- }
-
-// Get the data as a nested array
- var mark;
-const data = table.getData();
-const columnLength = data[0].length;  // Assuming the first row has all columns
-var columnIndex=3;
-
-   table.refresh();
-// Insert columns between existing columns
-for (let i = 0; i < columnLength-3; i++) {
-    table.insertColumn(1, columnIndex, false,[{title:" ",stripHTML:false}]);  // Insert 1 empty column after the current column
-    table.options.columns[columnIndex+1].align ='left';
-     table.options.columns[columnIndex+1].width =30;
- columnIndex=columnIndex+2;
- 
-};
- 
- var settings = table.getConfig();
-
-// Manipulate the nestedHeaders property in the settings
-settings.nestedHeaders = nested2;
-// Preserve original column widths; newly inserted grading columns stay narrow.
-settings.colWidths = reviewWidths.slice();
-if (Array.isArray(settings.columns)) {
-    for (var wj=0; wj<Math.min(settings.columns.length, reviewWidths.length); wj++) {
-        settings.columns[wj].width = reviewWidths[wj];
-    }
+// Add a review marker by CSS class only. No extra column, HTML content,
+// setValue(), or change to the saved answer is needed.
+function applyInCellGradeMarker(cell, correct) {
+    if (!cell) return;
+    cell.classList.remove('stack-grade-correct', 'stack-grade-incorrect');
+    cell.classList.add(correct ? 'stack-grade-correct' : 'stack-grade-incorrect');
 }
 
-// Destroy the table
-table.destroy();
+var checkAnswer = function() {
+    if (observer) observer.disconnect();
+    // Review markers must never be written back to student data / tableStyle.
+    suppressPersistence = true;
+    widthSyncEnabled = false;
+    readonly = true;
 
-// Recreate the table with the updated settings
-table = jspreadsheet(document.getElementById(uid_table), settings);
+    var studentData = table.getData();
+    var teacherData = teacherTable.getData();
 
-const studentData = table.getData();
-const teacherData = teacherTable.getData();
-const correct='<span style="font-size: 1em; color:green;">✔</span>';
-const wrong='<span style="font-size: 1em; color:red;">❌</span>';   
+    // Grade numeric cells in their ORIGINAL column and show feedback there.
+    cellsToGrade.forEach(({ row, col }) => {
+        var result = getNumericCellComparison(row, col);
+        if (!result.studentCell) return;
+        // Match the previous behavior: skip when both cells are empty.
+        if (result.studentValue === '' && result.teacherValue === '') return;
+        applyInCellGradeMarker(result.studentCell,
+            numericCellIsCorrect(row, col, result.studentValue, result.teacherValue));
+    });
 
-// Use stored positions for grading
-cellsToGrade.forEach(({ row, col,theGrade }) => {
-    const studentCellIdent = jspreadsheet.getColumnName(2*col-3) + (row+1);
-    const studentCell = table.getCell(studentCellIdent);
-    const studentValue = studentCell ? studentCell.innerHTML.trim() : '';
-
-    const teacherCellIdent = jspreadsheet.getColumnName(col) + (row+1); // No adjustment needed here
-    const teacherCell = teacherTable.getCell(teacherCellIdent);
-    const teacherValue = teacherCell ? teacherCell.innerHTML.trim() : '';
-
-    // Check if either student or teacher cells are not empty
-   if (studentValue !== '' || teacherValue !== '') {
-    if (studentValue == 0 && teacherValue == 0) {mark=correct}
-  else {
-  const absoluteDifference = Math.abs(parseFloat(studentValue) - parseFloat(teacherValue));
-  const ratio = absoluteDifference / Math.abs(parseFloat(teacherValue));
-  mark = ratio <= {#relativeErr#} ? correct: wrong;
-}
-        // Set the grade value in the grading column of the same row
-        const gradeCellIdent = jspreadsheet.getColumnName(2*col-2) + (row+1);
-        table.setValue(gradeCellIdent, mark, false);
-    }
-});
-  
-    readonly=true;
-    table.insertRow();
-    table.refresh();
-    table.deleteRow();
-
-    // Re-apply the shifted styles and column widths after recreation/refresh.
-    applyStylesToTable(table, shiftedStyles);
-    applyColumnWidths(table, reviewWidths);
-
-    // Show unit feedback inside column B, without inserting columns
-    // or modifying its underlying dropdown value / saved ans2 data.
+    // Grade units directly in column B (same marker style as numeric cells).
     unitCellsToGrade.forEach(({ row }) => {
         var unitCell = table.getCell('B' + (row + 1));
         if (!unitCell) return;
-        var isCorrect = unitsMatch(studentData[row] && studentData[row][1],
-                                   teacherData[row] && teacherData[row][1]);
-        var marker = document.createElement('span');
-        marker.textContent = isCorrect ? '✔' : '✖';
-        marker.setAttribute('aria-label', isCorrect ? 'Correct unit' : 'Incorrect unit');
-        marker.style.cssText = 'position:absolute;right:4px;top:50%;' +
-            'transform:translateY(-50%);font-weight:bold;color:' +
-            (isCorrect ? 'green' : 'red') + ';pointer-events:none;';
-        unitCell.style.position = 'relative';
-        unitCell.style.paddingRight = '20px';
-        unitCell.appendChild(marker);
+        applyInCellGradeMarker(unitCell,
+            unitsMatch(studentData[row] && studentData[row][1],
+                       teacherData[row] && teacherData[row][1]));
     });
-  };
+
+    // Lock the existing table without refreshing or rebuilding it.
+    // v3 supports the 'readonly' class, used by the original review code.
+    // The global editable flag further prevents editing in review mode.
+    table.options.editable = false;
+    table.options.allowInsertColumn = false;
+    table.options.allowInsertRow = false;
+    table.options.allowDeleteRow = false;
+    table.options.allowDeleteColumn = false;
+    for (var r = 0; r < studentData.length; r++) {
+        for (var c = 0; c < studentData[r].length; c++) {
+            var cell = table.getCell(jspreadsheet.getColumnName(c) + (r + 1));
+            if (cell) cell.classList.add('readonly');
+        }
+    }
+};
+
 var answered=false;
 
 // Check twice a second (500ms) to see if Moodle has graded/locked the question
