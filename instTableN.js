@@ -113,8 +113,10 @@ var initialColumnWidthChanges = {};
 var widthSyncEnabled = false;
 var suppressPersistence = false;
 
-// Default table appearance is derived from nested header groups, not hard-coded
-// D:E, F:G or H:J ranges. The first three descriptive columns stay neutral.
+// Default table appearance follows nested header groups rather than fixed columns.
+// Columns A:C always remain neutral unless styled by the user.
+// With nested headers, each group from D onward has its own color.
+// Without nested headers, columns D onward use the first color.
 // Group colors are CSS defaults and are NOT saved in tableStyle.
 var DEFAULT_CELL_CSS = {
     'text-align': 'center',
@@ -160,7 +162,7 @@ function applyDefaultCellClasses(cell, col) {
     });
     cell.classList.add('stack-default-cell');
     if (col < 2) cell.classList.add('stack-default-label');
-    var groupIndex = nestedColorGroupByColumn[col];
+    var groupIndex = col >= 3 ? nestedColorGroupByColumn[col] : undefined;
     if (Number.isInteger(groupIndex)) {
         cell.classList.add('stack-default-group-' + groupIndex);
     }
@@ -171,10 +173,18 @@ function applyDefaultCellClasses(cell, col) {
 // The first meaningful (outermost) grouping is used for multi-row headers.
 function buildNestedColorMap(rawNested, columnCount) {
     var map = [];
-    if (!Array.isArray(rawNested) || rawNested.length === 0) return map;
+    // No nested groups: color only D onward using the first palette color.
+    // A:C remain neutral; teachers/students may override any cell color.
+    if (!Array.isArray(rawNested) || rawNested.length === 0) {
+        for (var col = 3; col < columnCount; col++) map[col] = 0;
+        return map;
+    }
     var rows = Array.isArray(rawNested[0]) ? rawNested : [rawNested];
     var headerRow = rows[0];
-    if (!Array.isArray(headerRow)) return map;
+    if (!Array.isArray(headerRow) || headerRow.length === 0) {
+        for (var col = 3; col < columnCount; col++) map[col] = 0;
+        return map;
+    }
 
     var offset = 0;
     var colorGroup = 0;
@@ -242,7 +252,7 @@ function normaliseCssValue(value) {
 function defaultPropertiesForCell(col) {
     var defaults = Object.assign({}, DEFAULT_CELL_CSS);
     if (col < 2) defaults['font-weight'] = 'bold';
-    var groupIndex = nestedColorGroupByColumn[col];
+    var groupIndex = col >= 3 ? nestedColorGroupByColumn[col] : undefined;
     if (Number.isInteger(groupIndex)) {
         defaults['background-color'] = DEFAULT_GROUP_COLORS[groupIndex];
     }
@@ -320,7 +330,8 @@ const mrgd={#merged#};
     };
 
 var nested;
-const nst = {#nested#};
+// Allow a question with no nested Maxima variable at all.
+const nst = {#if stringp(nested) then nested else "[]"#};
 if (nst === undefined || nst === null || nst === '') {
     nested = [];
 } else {
@@ -342,7 +353,7 @@ function createLetterHeaders(count) {
 
 var originalColumnCount = {#Titles#}.length;
 // Use the teacher-defined nested column groups before adding the letter row.
-// With no nested headers, columns D onward do not get automatic group colors.
+// Without nested headers, only D onward use the first palette color.
 nestedColorGroupByColumn = buildNestedColorMap(nested, originalColumnCount);
 
 // JSpreadsheet requires nestedHeaders as an array of header rows.
