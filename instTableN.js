@@ -109,7 +109,13 @@ var data={#hintdata#};
 // The default appearance is supplied by CSS, not by per-cell setStyle().
 // Example: tableStyle:"{'D4':'font-weight:bold;','__COLWIDTHS__':'E=140'}";
 var COLUMN_WIDTH_KEY = '__COLWIDTHS__';
+// Only whole-column color changes in Design Mode create title overrides.
+// The merged nested title uses an override only if every column it spans
+// has the same explicit whole-column color.  Cell-only changes do not count.
+var TITLE_COLOR_KEY = '__TITLECOLORS__';
 var initialColumnWidthChanges = {};
+var titleColorOverrides = {};
+var lastDesignSelection = null;
 var widthSyncEnabled = false;
 var suppressPersistence = false;
 
@@ -307,6 +313,45 @@ if (tblStl !== undefined && tblStl !== null && tblStl !== '') {
 }
 initialColumnWidthChanges = extractWidthChanges(initialStyle);
 
+// Read/write only explicitly customized title colors.  For example,
+// __TITLECOLORS__: 'D=%23ffff00,F=%23f4cccc'.  Percent encoding protects
+// commas and spaces in rgb() values while keeping the Maxima string valid.
+function extractTitleColors(styleMap) {
+    var overrides = {};
+    if (!styleMap || !Object.prototype.hasOwnProperty.call(styleMap, TITLE_COLOR_KEY)) {
+        return overrides;
+    }
+    var encoded = String(styleMap[TITLE_COLOR_KEY] || '');
+    delete styleMap[TITLE_COLOR_KEY];
+    encoded.split(',').forEach(function(pair) {
+        var match = /^([A-Z]+)=(.+)$/.exec(pair.trim());
+        if (!match) return;
+        var col = columnIndexFromLetters(match[1]);
+        if (col < 3) return; // A-C are never automatically colored.
+        try {
+            var color = decodeURIComponent(match[2]);
+            if (color && color.indexOf(';') < 0 && color.indexOf('\"') < 0 &&
+                color.indexOf("'") < 0 && color.length <= 100) {
+                overrides[col] = color;
+            }
+        } catch (e) {}
+    });
+    return overrides;
+}
+
+function serializeTitleColors() {
+    return Object.keys(titleColorOverrides)
+        .map(Number)
+        .filter(function(col) { return Number.isInteger(col) && col >= 3 && col < originalColumnCount; })
+        .sort(function(a,b) { return a-b; })
+        .map(function(col) {
+            return jspreadsheet.getColumnName(col) + '=' +
+                encodeURIComponent(titleColorOverrides[col]);
+        }).join(',');
+}
+
+titleColorOverrides = extractTitleColors(initialStyle);
+
 var cellsToGrade = [];
 var unitCellsToGrade = [];
 
@@ -381,33 +426,139 @@ function colorColumnAndNestedTitles() {
         return cells;
     }
 
-    function colorHeaderRow(row) {
+    function getHeaderColor(firstColumn, span, nestedHeader) {
+        if (firstColumn < 3) return null;
+        var groupIndex = nestedColorGroupByColumn[firstColumn];
+        var defaultColor = Number.isInteger(groupIndex)
+            ? DEFAULT_GROUP_COLORS[groupIndex] : null;
+
+        // For a merged nested heading, only use a customized color if
+        // EVERY covered column was colored entirely and identically.
+        if (nestedHeader && span > 1) {
+            var firstColor = titleColorOverrides[firstColumn];
+            if (firstColor) {
+                var uniform = true;
+                for (var j = firstColumn + 1; j < firstColumn + span; j++) {
+                    if (j >= originalColumnCount ||
+                        !titleColorOverrides[j] ||
+                        normaliseCssValue(titleColorOverrides[j]) !==
+                        normaliseCssValue(firstColor)) {
+                        uniform = false;
+                        break;
+                    }
+                }
+                if (uniform) return firstColor;
+            }
+            return defaultColor;
+        }
+        return titleColorOverrides[firstColumn] || defaultColor;
+    }
+
+    function colorHeaderRow(row, nestedHeader) {
         if (!row) return;
         var col = 0;
         getDataHeaderCells(row).forEach(function(cell) {
             var span = Number(cell.colSpan) || 1;
-            // Never color header cells that start inside neutral columns A-C.
-            // A merged title crossing A-C cannot be colored only in part.
-            if (col >= 3) {
-                var group = nestedColorGroupByColumn[col];
-                if (Number.isInteger(group)) {
-                    cell.style.backgroundColor = DEFAULT_GROUP_COLORS[group];
-                }
-            }
+            var color = getHeaderColor(col, span, nestedHeader);
+            // Neutral A-C, and no coloring on the generated letter row.
+            cell.style.backgroundColor = color || '';
             col += span;
         });
     }
 
-    // The last THEAD row is the individual column Titles, not the letter row.
-    colorHeaderRow(headerRows[headerRows.length - 1]);
+    // Last THEAD row: individual chemical/formula Titles (not letters).
+    colorHeaderRow(headerRows[headerRows.length - 1], false);
 
-    // nested[0] is the generated A/B/C letter row: deliberately skip it.
-    // The remaining rows are the teacher's own nested headers.
+    // Skip nested[0], which contains the generated A/B/C... letter row.
     var userNestedRowCount = Math.max(0, nested.length - 1);
     var firstUserNestedRow = headerRows.length - 1 - userNestedRowCount;
     for (var i = 0; i < userNestedRowCount; i++) {
-        colorHeaderRow(headerRows[firstUserNestedRow + i]);
+        colorHeaderRow(headerRows[firstUserNestedRow + i], true);
     }
+}
+
+// Inspect a style operation itself, not the colors of unrelated cells.
+// This prevents a single-cell edit from modifying a column title.
+function touchedBackgroundCells(styleArgs) {
+    var touched = {};
+    if (!styleArgs || !styleArgs.length) return touched;
+    var first = styleArgs[0];
+    var entries = {};
+    if (first && typeof first === 'object' && !Array.isArray(first)) {
+        entries = first;
+    } else if (typeof first === 'string' &&
+               String(styleArgs[1]).toLowerCase() === 'background-color') {
+        entries[first] = 'background-color:' + String(styleArgs[2]) + ';';
+    }
+
+    Object.keys(entries).forEach(function(ref) {
+        var match = /^([A-Z]+)([1-9]\d*)$/.exec(ref);
+        if (!match) return;
+        var properties = parseCellCss(entries[ref]);
+        if (!Object.prototype.hasOwnProperty.call(properties, 'background-color')) return;
+        var col = columnIndexFromLetters(match[1]);
+        var row = Number(match[2]) - 1;
+        if (col >= 3 && col < originalColumnCount) {
+            if (!touched[col]) touched[col] = new Set();
+            touched[col].add(row);
+        }
+    });
+    return touched;
+}
+
+function colorHeadersAfterWholeColumnStyle(styleArgs) {
+    if ({#design#} !== 1 || suppressPersistence || readonly || !table) return;
+    var touched = touchedBackgroundCells(styleArgs);
+    var totalRows = table.getData().length;
+    if (totalRows < 1) return;
+    var changed = false;
+    Object.keys(touched).forEach(function(colText) {
+        var col = Number(colText);
+        var rows = touched[col];
+        // Prefer the exact set of cells colored in this operation.
+        var allRowsTouched = rows.size >= totalRows;
+        if (allRowsTouched) {
+            for (var y = 0; y < totalRows; y++) {
+                if (!rows.has(y)) { allRowsTouched = false; break; }
+            }
+        }
+        // Some v3 builds call setStyle once per selected cell.  In that case
+        // only promote the color if the user selected whole columns AND the
+        // entire final column is uniformly styled.  A one-cell selection does
+        // not pass this condition.
+        var selectedFullColumn = lastDesignSelection &&
+            lastDesignSelection.y1 <= 0 &&
+            lastDesignSelection.y2 >= totalRows - 1 &&
+            col >= lastDesignSelection.x1 &&
+            col <= lastDesignSelection.x2;
+        if (!allRowsTouched && !selectedFullColumn) return;
+
+        // Only promote the color if all cells are actually the same color.
+        // We read the JSpreadsheet style values, not MathJax-generated HTML.
+        var color = null;
+        for (var r = 0; r < totalRows; r++) {
+            var ref = jspreadsheet.getColumnName(col) + (r + 1);
+            var raw = table.getStyle(ref) || '';
+            var candidate = parseCellCss(raw)['background-color'];
+            if (!candidate) return;
+            if (color !== null && normaliseCssValue(candidate) !== normaliseCssValue(color)) return;
+            color = candidate;
+        }
+        if (!color) return;
+        var defaults = defaultPropertiesForCell(col);
+        if (defaults['background-color'] &&
+            normaliseCssValue(color) === normaliseCssValue(defaults['background-color'])) {
+            if (titleColorOverrides[col]) {
+                delete titleColorOverrides[col];
+                changed = true;
+            }
+        } else if (!titleColorOverrides[col] ||
+                   normaliseCssValue(titleColorOverrides[col]) !== normaliseCssValue(color)) {
+            titleColorOverrides[col] = color;
+            changed = true;
+        }
+    });
+    if (changed) colorColumnAndNestedTitles();
 }
 
 // Identify graded numeric cells and dropdown units.
@@ -519,6 +670,11 @@ function syncOutputs(jspInstance) {
         }
     }
     if (editedWidths.length) overrides[COLUMN_WIDTH_KEY] = editedWidths.join(',');
+    // Header color choices belong to the teacher's tableStyle, not ans2.
+    if ({#design#} == 1) {
+        var editedTitles = serializeTitleColors();
+        if (editedTitles) overrides[TITLE_COLOR_KEY] = editedTitles;
+    }
     var styleStr = JSON.stringify(overrides).replace(/"/g, "'");
 
     if ({#design#} == 1) {
@@ -562,6 +718,8 @@ if (dataInput.value !== '') {
         if (parsedInput.style !== null) {
             initialStyle = parsedInput.style;
             initialColumnWidthChanges = extractWidthChanges(initialStyle);
+            // Student style rows never control teacher-defined header colors.
+            delete initialStyle[TITLE_COLOR_KEY];
         }
         dataInput.dispatchEvent(new Event('change'));
     } catch (e) {
@@ -707,6 +865,24 @@ nestedHeaders:nested,
  mergeCells:merged,
                  
   toolbar:toolbar,
+  // Save the selection for v3 builds that apply toolbar styles one cell at a time.
+  onselection: function(instance, x1, y1, x2, y2) {
+      if ([x1,y1,x2,y2].every(Number.isFinite)) {
+          lastDesignSelection = {
+              x1: Math.min(x1,x2), x2: Math.max(x1,x2),
+              y1: Math.min(y1,y2), y2: Math.max(y1,y2)
+          };
+      } else {
+          lastDesignSelection = null;
+      }
+  },
+  // Also detect toolbar style operations in v3 if they bypass the wrapper.
+  onchangestyle: function(instance, changedStyles) {
+       if (!suppressPersistence && table) {
+           colorHeadersAfterWholeColumnStyle([changedStyles]);
+           syncOutputs(table);
+       }
+   },
   // Persist a manual column resize in the same tableStyle Maxima variable.
   onresizecolumn: function() {
       if (widthSyncEnabled && !suppressPersistence && table) syncOutputs(table);
@@ -810,7 +986,10 @@ if ({#design#} == 1) {
 // Hook into table.setStyle so toolbar color changes immediately update tableStyleOutput / ans2
 var origSetStyle = table.setStyle;
 table.setStyle = function() {
+    var styleArgs = Array.prototype.slice.call(arguments);
     var result = origSetStyle.apply(this, arguments);
+    // Only full-column background changes update Titles/nested headers.
+    colorHeadersAfterWholeColumnStyle(styleArgs);
     syncOutputs(table);
     return result;
 };
@@ -999,5 +1178,3 @@ var checkInterval = setInterval(function() {
  });
 [[/script]]
 </div>
-    
-[[/iframe]]
