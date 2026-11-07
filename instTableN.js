@@ -17,12 +17,10 @@
    <div id="spreadsheet" dir="ltr" >
     <div id="myView" style="display:none;" ></div>
  </div>
- <script>
-  //function for the table 
-   var S=function(value,n){return value.toExponential(n)};
-</script>
  
 [[script type="module"]]
+// Global helper for spreadsheet formulas (previously a raw HTML script).
+window.S = function(value, n) { return value.toExponential(n); };
 // Assuming MathJax is already loaded
 MathJax.Hub.Config({
   jax: ['input/AsciiMath'],
@@ -32,7 +30,7 @@ MathJax.Hub.Config({
 // Optional: Configure delimiters for AsciiMath
 MathJax.Hub.Config({
   asciimath2jax: {
-    delimiters: [['`', '`']] // Example delimiters
+    delimiters: [Array.of('`', '`')] // No literal double-square brackets in JavaScript
   }
 });
 
@@ -115,7 +113,6 @@ var COLUMN_WIDTH_KEY = '__COLWIDTHS__';
 var TITLE_COLOR_KEY = '__TITLECOLORS__';
 var initialColumnWidthChanges = {};
 var titleColorOverrides = {};
-var lastDesignSelection = null;
 var widthSyncEnabled = false;
 var suppressPersistence = false;
 
@@ -461,7 +458,11 @@ function colorColumnAndNestedTitles() {
             var span = Number(cell.colSpan) || 1;
             var color = getHeaderColor(col, span, nestedHeader);
             // Neutral A-C, and no coloring on the generated letter row.
-            cell.style.backgroundColor = color || '';
+            if (color) {
+                cell.style.setProperty('background-color', color, 'important');
+            } else {
+                cell.style.removeProperty('background-color');
+            }
             col += span;
         });
     }
@@ -477,88 +478,86 @@ function colorColumnAndNestedTitles() {
     }
 }
 
-// Inspect a style operation itself, not the colors of unrelated cells.
-// This prevents a single-cell edit from modifying a column title.
-function touchedBackgroundCells(styleArgs) {
-    var touched = {};
-    if (!styleArgs || !styleArgs.length) return touched;
-    var first = styleArgs[0];
-    var entries = {};
-    if (first && typeof first === 'object' && !Array.isArray(first)) {
-        entries = first;
-    } else if (typeof first === 'string' &&
-               String(styleArgs[1]).toLowerCase() === 'background-color') {
-        entries[first] = 'background-color:' + String(styleArgs[2]) + ';';
-    }
+// When JSpreadsheet colors an entire selection, some v3 builds update one
+// cell at a time. The previous code checked too early and rejected the column.
+// Instead, inspect the FINAL styles after all setStyle calls have settled.
+// A single-cell edit cannot recolor a title unless every data cell in that
+// column was explicitly given the same color.
+var headerStyleRefreshTimer = null;
 
-    Object.keys(entries).forEach(function(ref) {
-        var match = /^([A-Z]+)([1-9]\d*)$/.exec(ref);
-        if (!match) return;
-        var properties = parseCellCss(entries[ref]);
-        if (!Object.prototype.hasOwnProperty.call(properties, 'background-color')) return;
-        var col = columnIndexFromLetters(match[1]);
-        var row = Number(match[2]) - 1;
-        if (col >= 3 && col < originalColumnCount) {
-            if (!touched[col]) touched[col] = new Set();
-            touched[col].add(row);
+function readExplicitBackground(styleMap, col, row) {
+    var ref = jspreadsheet.getColumnName(col) + (row + 1);
+    var raw = styleMap && styleMap[ref];
+    if (!raw && table && typeof table.getStyle === 'function') {
+        try { raw = table.getStyle(ref); } catch (e) {}
+    }
+    var properties = parseCellCss(raw);
+    if (properties['background-color']) return properties['background-color'];
+
+    // Fallback for older JSpreadsheet builds that style DOM cells directly.
+    // Only INLINE background colors count, never inherited default CSS colors.
+    if (table && typeof table.getCell === 'function') {
+        var cell = table.getCell(ref);
+        if (cell && cell.style && cell.style.backgroundColor) {
+            return cell.style.backgroundColor;
         }
-    });
-    return touched;
+    }
+    return null;
 }
 
-function colorHeadersAfterWholeColumnStyle(styleArgs) {
+function scheduleHeaderColorUpdate() {
     if ({#design#} !== 1 || suppressPersistence || readonly || !table) return;
-    var touched = touchedBackgroundCells(styleArgs);
-    var totalRows = table.getData().length;
-    if (totalRows < 1) return;
-    var changed = false;
-    Object.keys(touched).forEach(function(colText) {
-        var col = Number(colText);
-        var rows = touched[col];
-        // Prefer the exact set of cells colored in this operation.
-        var allRowsTouched = rows.size >= totalRows;
-        if (allRowsTouched) {
-            for (var y = 0; y < totalRows; y++) {
-                if (!rows.has(y)) { allRowsTouched = false; break; }
-            }
-        }
-        // Some v3 builds call setStyle once per selected cell.  In that case
-        // only promote the color if the user selected whole columns AND the
-        // entire final column is uniformly styled.  A one-cell selection does
-        // not pass this condition.
-        var selectedFullColumn = lastDesignSelection &&
-            lastDesignSelection.y1 <= 0 &&
-            lastDesignSelection.y2 >= totalRows - 1 &&
-            col >= lastDesignSelection.x1 &&
-            col <= lastDesignSelection.x2;
-        if (!allRowsTouched && !selectedFullColumn) return;
 
-        // Only promote the color if all cells are actually the same color.
-        // We read the JSpreadsheet style values, not MathJax-generated HTML.
-        var color = null;
-        for (var r = 0; r < totalRows; r++) {
-            var ref = jspreadsheet.getColumnName(col) + (r + 1);
-            var raw = table.getStyle(ref) || '';
-            var candidate = parseCellCss(raw)['background-color'];
-            if (!candidate) return;
-            if (color !== null && normaliseCssValue(candidate) !== normaliseCssValue(color)) return;
-            color = candidate;
-        }
-        if (!color) return;
-        var defaults = defaultPropertiesForCell(col);
-        if (defaults['background-color'] &&
-            normaliseCssValue(color) === normaliseCssValue(defaults['background-color'])) {
-            if (titleColorOverrides[col]) {
-                delete titleColorOverrides[col];
+    if (headerStyleRefreshTimer !== null) clearTimeout(headerStyleRefreshTimer);
+    headerStyleRefreshTimer = setTimeout(function() {
+        headerStyleRefreshTimer = null;
+        if (suppressPersistence || readonly || !table) return;
+
+        var rowCount = table.getData().length;
+        var styleMap = (typeof table.getStyle === 'function')
+            ? (table.getStyle() || {}) : {};
+        var changed = false;
+
+        for (var col = 3; col < originalColumnCount; col++) {
+            // There must be enough rows to distinguish a column from a cell.
+            if (rowCount < 2) continue;
+
+            var color = null;
+            var uniform = true;
+            for (var row = 0; row < rowCount; row++) {
+                var candidate = readExplicitBackground(styleMap, col, row);
+                if (!candidate) { uniform = false; break; }
+                if (color !== null &&
+                    normaliseCssValue(candidate) !== normaliseCssValue(color)) {
+                    uniform = false;
+                    break;
+                }
+                color = candidate;
+            }
+            // A single colored cell or mixed-colored column changes no header.
+            if (!uniform || !color) continue;
+
+            var defaults = defaultPropertiesForCell(col);
+            var isDefaultColor = defaults['background-color'] &&
+                normaliseCssValue(color) ===
+                normaliseCssValue(defaults['background-color']);
+
+            if (isDefaultColor) {
+                if (Object.prototype.hasOwnProperty.call(titleColorOverrides, col)) {
+                    delete titleColorOverrides[col];
+                    changed = true;
+                }
+            } else if (!titleColorOverrides[col] ||
+                       normaliseCssValue(titleColorOverrides[col]) !==
+                       normaliseCssValue(color)) {
+                titleColorOverrides[col] = color;
                 changed = true;
             }
-        } else if (!titleColorOverrides[col] ||
-                   normaliseCssValue(titleColorOverrides[col]) !== normaliseCssValue(color)) {
-            titleColorOverrides[col] = color;
-            changed = true;
         }
-    });
-    if (changed) colorColumnAndNestedTitles();
+        if (changed) colorColumnAndNestedTitles();
+        // Include the new __TITLECOLORS__ override in Maxima's export.
+        syncOutputs(table);
+    }, 20);
 }
 
 // Identify graded numeric cells and dropdown units.
@@ -865,24 +864,10 @@ nestedHeaders:nested,
  mergeCells:merged,
                  
   toolbar:toolbar,
-  // Save the selection for v3 builds that apply toolbar styles one cell at a time.
-  onselection: function(instance, x1, y1, x2, y2) {
-      if ([x1,y1,x2,y2].every(Number.isFinite)) {
-          lastDesignSelection = {
-              x1: Math.min(x1,x2), x2: Math.max(x1,x2),
-              y1: Math.min(y1,y2), y2: Math.max(y1,y2)
-          };
-      } else {
-          lastDesignSelection = null;
-      }
-  },
-  // Also detect toolbar style operations in v3 if they bypass the wrapper.
+  // Detect toolbar styling even when JSpreadsheet calls setStyle internally.
   onchangestyle: function(instance, changedStyles) {
-       if (!suppressPersistence && table) {
-           colorHeadersAfterWholeColumnStyle([changedStyles]);
-           syncOutputs(table);
-       }
-   },
+      if (!suppressPersistence && table) scheduleHeaderColorUpdate();
+  },
   // Persist a manual column resize in the same tableStyle Maxima variable.
   onresizecolumn: function() {
       if (widthSyncEnabled && !suppressPersistence && table) syncOutputs(table);
@@ -969,6 +954,27 @@ suppressPersistence = false;
 widthSyncEnabled = true;
 syncOutputs(table);
 
+// Legacy JSpreadsheet toolbar builds sometimes change cell.style directly,
+// bypassing both the setStyle wrapper and onchangestyle callback. This observer
+// is a fallback limited to data-cell style changes in Design Mode. It ignores
+// header mutations, so applying colors to titles cannot trigger a loop.
+if ({#design#} == 1) {
+    var headerCellStyleObserver = new MutationObserver(function(mutations) {
+        var hasDataCellStyleChange = mutations.some(function(mutation) {
+            var node = mutation.target;
+            return node && node.tagName === 'TD' &&
+                node.hasAttribute('data-x') && node.hasAttribute('data-y') &&
+                node.closest('tbody');
+        });
+        if (hasDataCellStyleChange) scheduleHeaderColorUpdate();
+    });
+    headerCellStyleObserver.observe(document.getElementById(uid_table), {
+        attributes: true,
+        attributeFilter: ['style'],
+        subtree: true
+    });
+}
+
 // Show the tableStyle export box when in Design Mode (design == 1)
 if ({#design#} == 1) {
     var styleBar = document.getElementById('styleExportBar');
@@ -988,9 +994,8 @@ var origSetStyle = table.setStyle;
 table.setStyle = function() {
     var styleArgs = Array.prototype.slice.call(arguments);
     var result = origSetStyle.apply(this, arguments);
-    // Only full-column background changes update Titles/nested headers.
-    colorHeadersAfterWholeColumnStyle(styleArgs);
-    syncOutputs(table);
+    // Defer reading styles until the ENTIRE selection has finished updating.
+    scheduleHeaderColorUpdate();
     return result;
 };
  
